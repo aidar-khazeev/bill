@@ -1,0 +1,21 @@
+from .base import Base
+from typing import Literal
+from datetime import datetime
+from uuid import UUID
+from decimal import Decimal
+from sqlalchemy.orm import Mapped, mapped_column
+
+
+Status = Literal['created', 'acking', 'succeeded']
+
+
+class Payment(Base):
+    __tablename__ = 'payment'
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, index=True)
+    external_id: Mapped[str] = mapped_column(index=True)
+    user_id: Mapped[UUID] = mapped_column(index=True)
+    created_at: Mapped[datetime] = mapped_column()
+    handler_url: Mapped[str] = mapped_column()
+    amount: Mapped[Decimal] = mapped_column()
+    status: Mapped[Status] = mapped_column()

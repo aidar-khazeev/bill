@@ -1,0 +1,19 @@
+[project]
+name = "bill-api"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+    "fastapi[standard] ==0.128.0",
+    "orjson ==3.11.5",
+    "gunicorn ==23.0.0",
+    "pydantic-settings ==2.12.0",
+    "psycopg[binary] ==3.3.2",
+    "alembic ==1.18.0"
+]
+
+[dependency-groups]
+dev = [
+    "mypy ==1.19.1",
+    "ruff ==0.14.9",
+    "pytest ==9.0.2"
+]
