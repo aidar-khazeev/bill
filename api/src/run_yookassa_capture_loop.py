@@ -8,7 +8,7 @@ from main import app
 
 async def main():
     async with LifespanManager(app):
-        payment_service = await services.payment.get_payment_service(db.postgres.get_session_maker())
+        payment_service = services.payment.get_payment_service(db.postgres.get_session_maker())
         await payment_service.run_handlers_notification_loop()
 
 

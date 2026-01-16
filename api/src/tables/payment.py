@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-Status = Literal['created', 'acking', 'succeeded']
+Status = Literal['created', 'succeeded', 'refunded']
 
 
 class Payment(Base):
@@ -16,6 +16,5 @@ class Payment(Base):
     external_id: Mapped[str] = mapped_column(index=True)
     user_id: Mapped[UUID] = mapped_column(index=True)
     created_at: Mapped[datetime] = mapped_column()
-    handler_url: Mapped[str] = mapped_column()
-    amount: Mapped[Decimal] = mapped_column()
+    roubles: Mapped[Decimal] = mapped_column()
     status: Mapped[Status] = mapped_column()

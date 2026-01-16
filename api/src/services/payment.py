@@ -27,20 +27,16 @@ class PaymentService:
     session_maker: async_sessionmaker[AsyncSession]
     yookassa_client: httpx.AsyncClient
 
-    async def charge(
-        self,
-        user_id: UUID,
-        handler_url: str,
-        return_url: str,
-        amount: Decimal
-    ):
+    async def charge(self, user_id: UUID, handler_url: str, return_url: str, roubles: Decimal):
+        payment_id = uuid4()
+
+        # https://yookassa.ru/developers/api#create_payment
         response = await self.yookassa_client.post(
             url='/v3/payments',
             headers={'Idempotence-Key': str(uuid4())},
-            auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key),
             json={
                 'amount': {
-                    'value': str(amount),
+                    'value': str(roubles),
                     'currency': 'RUB'
                 },
                 'confirmation': {
@@ -49,22 +45,28 @@ class PaymentService:
                 },
                 # Проходим 2 стадии
                 # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#capture-and-cancel
-                'capture': False
+                'capture': False,
+                'metadata': {
+                    'payment_id': str(payment_id),
+                    'handler_url': handler_url
+                }
             }
         )
         assert response.status_code == 200, response.text
-
         response_json = response.json()
+        # При ошибке, если payment все же создался,
+        # страницу для перенаправления пользователь не получит, и не подтвердит оплату.
+        # Payment будет в статусе `pending`, через некоторое время перейдет в `expired_on_confirmation`
+        # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#user-confirmation
+
         async with self.session_maker() as session:
-            payment_id = uuid4()
             await session.execute(
                 insert(tables.Payment).values({
                     tables.Payment.id: payment_id,
                     tables.Payment.external_id: response_json['id'],
                     tables.Payment.user_id: user_id,
                     tables.Payment.created_at: datetime.now(),
-                    tables.Payment.handler_url: str(handler_url),
-                    tables.Payment.amount: amount,
+                    tables.Payment.roubles: roubles,
                     tables.Payment.status: 'created'
                 })
             )
@@ -75,82 +77,165 @@ class PaymentService:
             confirmation_url=HttpUrl(response_json['confirmation']['confirmation_url'])
         )
 
+    async def refund(self, payment_id: UUID, handler_url: str):
+        async with self.session_maker() as session:
+            payment = await session.get(tables.Payment, payment_id)
+            assert payment is not None
+
+            # Будет проверен один раз в отдельном процессе,
+            # если post запрос не завершится успешно
+            refund = tables.RefundRequest(
+                id=uuid4(),
+                payment_id=payment_id,
+                handler_url=handler_url
+            )
+            session.add(refund)
+            await session.commit()
+
+
     async def run_handlers_notification_loop(self):
         handler_client = httpx.AsyncClient()
 
         while True:
-            response = await self.yookassa_client.get(
-                url='/v3/payments',
-                auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key),
-                params={'status': 'waiting_for_capture'}
-            )
-            response_json = response.json()
-            response.raise_for_status()
+            await _capture(self.yookassa_client)
 
-            external_ids_to_capture = [str(payment['id']) for payment in response_json['items']]
-
-            if external_ids_to_capture:
-                async with db.postgres.get_session_maker()() as session:
-                    await session.execute(
-                        update(tables.Payment)
-                        .where(tables.Payment.external_id.in_(external_ids_to_capture))
-                        .values({tables.Payment.status: 'acking'})
-                    )
-                    await session.commit()
-
-                    for external_id_and_amount in (await session.execute(
-                        select(tables.Payment.external_id, tables.Payment.amount)
-                        .where(tables.Payment.external_id.in_(external_ids_to_capture))
-                    )).fetchall():
-                        external_id, amount = external_id_and_amount.tuple()
-
-                        response = await self.yookassa_client.post(
-                            url=f'/v3/payments/{external_id}/capture',
-                            auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key),
-                            headers={'Idempotence-Key': str(uuid4())},
-                            json={
-                                'amount': {
-                                    'value': str(amount),
-                                    'currency': 'RUB'
-                                }
-                            }
-                        )
-                        response.raise_for_status()
-
-            async with db.postgres.get_session_maker()() as session:
-                ids_and_handler_urls = (await session.execute(
-                    select(tables.Payment.id, tables.Payment.handler_url)
-                    .where(tables.Payment.status=='acking')
-                )).all()
-
-            tasks = (
-                asyncio.create_task(self._notify_handler(handler_client, *id_and_handler_url.tuple()))
-                for id_and_handler_url in ids_and_handler_urls
-            )
-
-            asyncio.gather(*tasks)
+            await _notify_charge(self.yookassa_client, handler_client)
+            await _notify_refund(self.yookassa_client, handler_client)
 
             await asyncio.sleep(8.0)
 
 
-    async def _notify_handler(self, handler_client: httpx.AsyncClient, payment_id: UUID, handler_url: str):
-        response = await handler_client.post(url=handler_url, json={'payment_id': str(payment_id)})
-        response.raise_for_status()
+async def _capture(yookassa_client: httpx.AsyncClient):
+    # https://yookassa.ru/developers/api#get_payments_list
+    response = await yookassa_client.get(
+        url='/v3/payments',
+        params={'status': 'waiting_for_capture'}
+    )
+    assert response.status_code == 200, response.text
 
-        async with db.postgres.get_session_maker()() as session:
+    waiting = response.json()['items']
+
+    async with db.postgres.get_session_maker()() as session:
+        for yoo_payment in waiting:
+            metadata = yoo_payment['metadata']
+            if not metadata:
+                continue
+
+            payment = (await session.execute(
+                select(tables.Payment)
+                .where(tables.Payment.external_id==yoo_payment['id'])
+            )).scalar_one()
+
+            session.add(tables.ChargeRequest(
+                id=uuid4(),
+                payment_id=metadata['payment_id'],
+                handler_url=metadata['handler_url']
+            ))
+            session.expunge_all()
+            await session.commit()
+
+            response = await yookassa_client.post(
+                url=f'/v3/payments/{payment.external_id}/capture',
+                headers={'Idempotence-Key': str(uuid4())},
+                json={'amount': {'value': str(payment.roubles), 'currency': 'RUB'}}
+            )
+            assert response.status_code == 200, response.text  # TODO
+
+
+async def _notify_charge(yookassa_client: httpx.AsyncClient, handler_client: httpx.AsyncClient):
+    async with db.postgres.get_session_maker()() as session:
+        for charge in (await session.execute(select(tables.ChargeRequest))).scalars():
+            session.expunge(charge)
+            payment = (await session.execute(
+                select(tables.Payment)
+                .where(tables.Payment.id==charge.payment_id)
+            )).scalar_one()
+
+            # https://yookassa.ru/developers/api#get_payment
+            response = await yookassa_client.get(
+                url=f'/v3/payments/{payment.external_id}',
+                headers={'Idempotence-Key': str(uuid4())},
+            )
+            assert response.status_code == 200, response.text  # TODO
+            response_json = response.json()
+
+            if response_json['status'] == 'waiting_for_capture':
+                # Если создание tables.ChargeRequest прошло успешно, но вызов `/capture` завершился с ошибкой,
+                # то Payment может находится в статусе `waiting_for_capture`
+                await session.delete(charge)
+                await session.commit()
+            elif response_json['status'] != 'succeeded':
+                raise RuntimeError(response_json['status'])  # TODO
+
+            # Выполняется только если 'succeeded'
+            response = await handler_client.post(url=charge.handler_url, json={'payment_id': str(payment.id)})
+            assert response.status_code == 200, response.text
+
             await session.execute(
                 update(tables.Payment)
-                .where(tables.Payment.id==payment_id)
+                .where(tables.Payment.id==payment.id)
                 .values({tables.Payment.status: 'succeeded'})
             )
+            await session.delete(charge)
+            await session.commit()
+
+
+
+async def _notify_refund(yookassa_client: httpx.AsyncClient, handler_client: httpx.AsyncClient):
+    async with db.postgres.get_session_maker()() as session:
+        for refund in (await session.execute(select(tables.RefundRequest))).scalars():
+            payment = (await session.execute(
+                select(tables.Payment)
+                .where(tables.Payment.id==refund.payment_id)
+            )).scalar_one()
+
+            # https://yookassa.ru/developers/api#create_refund
+            response = await yookassa_client.post(
+                url='/v3/refunds',
+                headers={'Idempotence-Key': str(uuid4())},
+                json={
+                    'payment_id': payment.external_id,
+                    'amount': {'value': str(payment.roubles), 'currency': 'RUB'}
+                }
+            )
+
+            if response.status_code == 400 and response.json()['code'] == 'invalid_request':
+                # https://yookassa.ru/developers/api#get_refunds_list
+                response = await yookassa_client.get(
+                    url='/v3/refunds',
+                    headers={'Idempotence-Key': str(uuid4())},
+                    params={
+                        'payment_id': str(payment.external_id)
+                    }
+                )
+                assert response.status_code == 200, response.text  # TODO
+                assert len(response.json()['items']) > 0  # Был refund
+            else:
+                assert response.status_code == 200, response.text  # TODO
+                response_json = response.json()
+
+                assert response_json['status'] == 'succeeded', response_json['status']
+
+            response = await handler_client.post(url=refund.handler_url, json={'payment_id': str(payment.id)})
+            assert response.status_code == 200, response.text
+
+            await session.execute(
+                update(tables.Payment)
+                .where(tables.Payment.id==payment.id)
+                .values({tables.Payment.status: 'refunded'})
+            )
+            await session.delete(refund)
             await session.commit()
 
 
 @lru_cache
-async def get_payment_service(
+def get_payment_service(
     session_maker: Annotated[async_sessionmaker[AsyncSession], Depends(db.postgres.get_session_maker)]
 ) -> PaymentService:
     return PaymentService(
         session_maker=session_maker,
-        yookassa_client=httpx.AsyncClient(base_url='https://api.yookassa.ru')
+        yookassa_client=httpx.AsyncClient(
+            base_url='https://api.yookassa.ru',
+            auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key)
+        )
     )
