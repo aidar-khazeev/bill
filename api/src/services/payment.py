@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+import logging
 from functools import lru_cache
 from fastapi import Depends
 from datetime import datetime
@@ -15,6 +16,17 @@ import db.postgres
 import tables
 from settings import yookassa_settings
 
+
+logger = logging.getLogger('payment-service')
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)s %(levelname)s: %(message)s'
+)
+
+
+class PaymentDoesntExistError(Exception):
+    ...
 
 
 class ChargeInfo(BaseModel):
@@ -60,16 +72,14 @@ class PaymentService:
         # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#user-confirmation
 
         async with self.session_maker() as session:
-            await session.execute(
-                insert(tables.Payment).values({
-                    tables.Payment.id: payment_id,
-                    tables.Payment.external_id: response_json['id'],
-                    tables.Payment.user_id: user_id,
-                    tables.Payment.created_at: datetime.now(),
-                    tables.Payment.roubles: roubles,
-                    tables.Payment.status: 'created'
-                })
-            )
+            await session.execute(insert(tables.Payment).values({
+                tables.Payment.id: payment_id,
+                tables.Payment.external_id: response_json['id'],
+                tables.Payment.user_id: user_id,
+                tables.Payment.created_at: datetime.now(),
+                tables.Payment.roubles: roubles,
+                tables.Payment.status: 'created'
+            }))
             await session.commit()
 
         return ChargeInfo(
@@ -80,16 +90,16 @@ class PaymentService:
     async def refund(self, payment_id: UUID, handler_url: str):
         async with self.session_maker() as session:
             payment = await session.get(tables.Payment, payment_id)
-            assert payment is not None
+            if payment is None:
+                raise PaymentDoesntExistError()
 
             # Будет проверен один раз в отдельном процессе,
             # если post запрос не завершится успешно
-            refund = tables.RefundRequest(
-                id=uuid4(),
-                payment_id=payment_id,
-                handler_url=handler_url
-            )
-            session.add(refund)
+            await session.execute(insert(tables.RefundRequest).values({
+                tables.RefundRequest.id: uuid4(),
+                tables.RefundRequest.payment_id: payment_id,
+                tables.RefundRequest.handler_url: handler_url
+            }))
             await session.commit()
 
 
@@ -112,34 +122,33 @@ async def _capture(yookassa_client: httpx.AsyncClient):
         params={'status': 'waiting_for_capture'}
     )
     assert response.status_code == 200, response.text
-
     waiting = response.json()['items']
 
-    async with db.postgres.get_session_maker()() as session:
-        for yoo_payment in waiting:
-            metadata = yoo_payment['metadata']
-            if not metadata:
-                continue
+    for yoo_payment in waiting:
+        metadata = yoo_payment['metadata']
+        if not metadata:
+            continue
 
+        async with db.postgres.get_session_maker()() as session:
             payment = (await session.execute(
                 select(tables.Payment)
                 .where(tables.Payment.external_id==yoo_payment['id'])
             )).scalar_one()
+            session.expunge(payment)
 
-            session.add(tables.ChargeRequest(
-                id=uuid4(),
-                payment_id=metadata['payment_id'],
-                handler_url=metadata['handler_url']
-            ))
-            session.expunge_all()
+            await session.execute(insert(tables.ChargeRequest).values({
+                tables.ChargeRequest.id: uuid4(),
+                tables.ChargeRequest.payment_id: metadata['payment_id'],
+                tables.ChargeRequest.handler_url: metadata['handler_url']
+            }))
             await session.commit()
 
-            response = await yookassa_client.post(
-                url=f'/v3/payments/{payment.external_id}/capture',
-                headers={'Idempotence-Key': str(uuid4())},
-                json={'amount': {'value': str(payment.roubles), 'currency': 'RUB'}}
-            )
-            assert response.status_code == 200, response.text  # TODO
+        response = await yookassa_client.post(
+            url=f'/v3/payments/{payment.external_id}/capture',
+            headers={'Idempotence-Key': str(uuid4())},
+            json={'amount': {'value': str(payment.roubles), 'currency': 'RUB'}}
+        )
+        assert response.status_code == 200, response.text  # TODO
 
 
 async def _notify_charge(yookassa_client: httpx.AsyncClient, handler_client: httpx.AsyncClient):
@@ -149,7 +158,13 @@ async def _notify_charge(yookassa_client: httpx.AsyncClient, handler_client: htt
             payment = (await session.execute(
                 select(tables.Payment)
                 .where(tables.Payment.id==charge.payment_id)
-            )).scalar_one()
+            )).scalar_one_or_none()
+
+            if payment is None:
+                await session.delete(charge)
+                await session.commit()
+                logger.warning(f'charge request {charge.id} points to non-existent payment {charge.payment_id}, ignoring')
+                continue
 
             # https://yookassa.ru/developers/api#get_payment
             response = await yookassa_client.get(
@@ -187,7 +202,13 @@ async def _notify_refund(yookassa_client: httpx.AsyncClient, handler_client: htt
             payment = (await session.execute(
                 select(tables.Payment)
                 .where(tables.Payment.id==refund.payment_id)
-            )).scalar_one()
+            )).scalar_one_or_none()
+
+            if payment is None:
+                await session.delete(refund)
+                await session.commit()
+                logger.warning(f'refund request {refund.id} points to non-existent payment {refund.payment_id}, ignoring')
+                continue
 
             # https://yookassa.ru/developers/api#create_refund
             response = await yookassa_client.post(
@@ -199,6 +220,7 @@ async def _notify_refund(yookassa_client: httpx.AsyncClient, handler_client: htt
                 }
             )
 
+            # Возврат может быть уже сделан
             if response.status_code == 400 and response.json()['code'] == 'invalid_request':
                 # https://yookassa.ru/developers/api#get_refunds_list
                 response = await yookassa_client.get(
@@ -209,11 +231,10 @@ async def _notify_refund(yookassa_client: httpx.AsyncClient, handler_client: htt
                     }
                 )
                 assert response.status_code == 200, response.text  # TODO
-                assert len(response.json()['items']) > 0  # Был refund
+                assert len(response.json()['items']) > 0
             else:
                 assert response.status_code == 200, response.text  # TODO
                 response_json = response.json()
-
                 assert response_json['status'] == 'succeeded', response_json['status']
 
             response = await handler_client.post(url=refund.handler_url, json={'payment_id': str(payment.id)})
