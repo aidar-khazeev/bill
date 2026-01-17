@@ -14,14 +14,14 @@ from sqlalchemy import insert, select, update
 
 import db.postgres
 import tables
-from settings import yookassa_settings
+from settings import settings, yookassa_settings
 
 
 logger = logging.getLogger('payment-service')
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(name)s %(levelname)s: %(message)s'
+    format='%(asctime)s %(levelname)s: %(message)s'
 )
 
 
@@ -182,9 +182,23 @@ async def _notify_charge(yookassa_client: httpx.AsyncClient, handler_client: htt
             elif response_json['status'] != 'succeeded':
                 raise RuntimeError(response_json['status'])  # TODO
 
-            # Выполняется только если 'succeeded'
-            response = await handler_client.post(url=charge.handler_url, json={'payment_id': str(payment.id)})
-            assert response.status_code == 200, response.text
+            # Далее выполняется только если 'succeeded'
+
+            error_msg = None
+            try:
+                response = await handler_client.post(
+                    url=charge.handler_url,
+                    json={'payment_id': str(payment.id)},
+                    timeout=settings.notification_timeout
+                )
+                if response.status_code != 200:
+                    error_msg = f'got status {response.status_code} from "charged" handler "{charge.handler_url}"'
+            except httpx.ConnectError:
+                error_msg = f'couldn\'t connect to "charged" handler "{charge.handler_url}"'
+
+            if error_msg is not None:
+                logger.warning(error_msg)
+                continue
 
             await session.execute(
                 update(tables.Payment)
@@ -237,8 +251,21 @@ async def _notify_refund(yookassa_client: httpx.AsyncClient, handler_client: htt
                 response_json = response.json()
                 assert response_json['status'] == 'succeeded', response_json['status']
 
-            response = await handler_client.post(url=refund.handler_url, json={'payment_id': str(payment.id)})
-            assert response.status_code == 200, response.text
+            error_msg = None
+            try:
+                response = await handler_client.post(
+                    url=refund.handler_url,
+                    json={'payment_id': str(payment.id)},
+                    timeout=settings.notification_timeout
+                )
+                if response.status_code != 200:
+                    error_msg = f'got status {response.status_code} from "charged" handler "{refund.handler_url}"'
+            except httpx.ConnectError:
+                error_msg = f'couldn\'t connect to "charged" handler "{refund.handler_url}"'
+
+            if error_msg is not None:
+                logger.warning(error_msg)
+                continue
 
             await session.execute(
                 update(tables.Payment)

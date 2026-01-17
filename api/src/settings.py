@@ -2,6 +2,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='bill_api_')
+
+    notification_timeout: float = Field(default=5.0)
+
+
 class PostgresSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='bill_postgres_')
 
@@ -23,5 +29,6 @@ class YookassaSettings(BaseSettings):
     secret_key: str
 
 
+settings = Settings()
 pg_settings = PostgresSettings()
 yookassa_settings = YookassaSettings()  # type: ignore
