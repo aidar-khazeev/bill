@@ -20,7 +20,7 @@ from settings import settings, yookassa_settings
 logger = logging.getLogger('payment-service')
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s %(levelname)s: %(message)s'
 )
 
