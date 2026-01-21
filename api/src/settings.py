@@ -7,6 +7,10 @@ class Settings(BaseSettings):
 
     notification_timeout: float = Field(default=5.0)
 
+    capture_loop_interval: float = Field(default=4.0)
+    notify_charge_loop_interval: float = Field(default=4.0)
+    notify_refund_loop_interval: float = Field(default=16.0)
+
 
 class PostgresSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='bill_postgres_')

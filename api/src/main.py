@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import db.postgres
 import api.v1.payment
+import services.payment
 from settings import pg_settings
 
 
@@ -29,3 +30,19 @@ app = FastAPI(
 
 
 app.include_router(api.v1.payment.router, prefix='/api/v1/pay', tags=['Payment'])
+
+
+@app.exception_handler(services.payment.PaymentDoesntExistError)
+async def on_payment_doesnt_exist_error(request, exc):
+    return ORJSONResponse(
+        status_code=401,
+        content={'message': 'payment with such id doesn\'t exist'}
+    )
+
+
+@app.exception_handler(services.payment.ExternalPaymentServiceError)
+async def on_external_payment_service_error(request, exc):
+    return ORJSONResponse(
+        status_code=500,
+        content={'message': 'external payment service error'}
+    )
