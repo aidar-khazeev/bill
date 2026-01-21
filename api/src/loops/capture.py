@@ -4,19 +4,16 @@ import asyncio
 from typing import Any
 from uuid import uuid4
 from sqlalchemy import select, insert
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 import tables
+import db.postgres
 from settings import settings
 
 
 logger = logging.getLogger('payment-service-capture-loop')
 
 
-async def payments_capture_loop(
-    session_maker: async_sessionmaker[AsyncSession],
-    yookassa_client: httpx.AsyncClient
-):
+async def payments_capture_loop(yookassa_client: httpx.AsyncClient):
     next_cursor = None
 
     while True:
@@ -37,14 +34,10 @@ async def payments_capture_loop(
         next_cursor = response_json.get('next_cursor', None)
 
         for yoo_payment in response_json['items']:
-            await capture_payment(yoo_payment, session_maker, yookassa_client)
+            await capture_payment(yoo_payment, yookassa_client)
 
 
-async def capture_payment(
-    yoo_payment: dict[str, Any],
-    session_maker: async_sessionmaker[AsyncSession],
-    yookassa_client: httpx.AsyncClient
-):
+async def capture_payment(yoo_payment: dict[str, Any], yookassa_client: httpx.AsyncClient):
     metadata = yoo_payment['metadata']
     if not metadata:
         logger.warning(f'payment {yoo_payment['id']} has no metadata, ignoring')
@@ -53,7 +46,7 @@ async def capture_payment(
     payment_id = metadata['payment_id']
     handler_url = metadata['handler_url']
 
-    async with session_maker() as session:
+    async with db.postgres.session_maker() as session:
         payment = (await session.execute(
             select(tables.Payment)
             .where(tables.Payment.external_id==yoo_payment['id'])

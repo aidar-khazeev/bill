@@ -3,9 +3,10 @@ import asyncio
 import logging
 from uuid import uuid4
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import tables
+import db.postgres
 from settings import settings
 
 
@@ -13,14 +14,13 @@ logger = logging.getLogger('payment-service-refund-charge-loop')
 
 
 async def refund_handlers_notification_loop(
-    session_maker: async_sessionmaker[AsyncSession],
     yookassa_client: httpx.AsyncClient,
     handler_client: httpx.AsyncClient
 ):
     while True:
         await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
 
-        async with session_maker() as session:
+        async with db.postgres.session_maker() as session:
             for refund in (await session.execute(select(tables.RefundRequest))).scalars():
                 await notify_refund_handler(refund, session, yookassa_client, handler_client)
 

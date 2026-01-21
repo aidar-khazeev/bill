@@ -1,14 +1,11 @@
 import httpx
 import logging
 from functools import lru_cache
-from fastapi import Depends
 from datetime import datetime
 from uuid import UUID, uuid4
 from decimal import Decimal
-from typing import Annotated
 from dataclasses import dataclass
 from pydantic import BaseModel, HttpUrl
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy import insert
 
 import db.postgres
@@ -34,7 +31,6 @@ class ChargeInfo(BaseModel):
 
 @dataclass(frozen=True)
 class PaymentService:
-    session_maker: async_sessionmaker[AsyncSession]
     yookassa_client: httpx.AsyncClient
 
     async def charge(self, user_id: UUID, handler_url: str, return_url: str, roubles: Decimal):
@@ -78,7 +74,7 @@ class PaymentService:
 
         response_json = response.json()
 
-        async with self.session_maker() as session:
+        async with db.postgres.session_maker() as session:
             await session.execute(insert(tables.Payment).values({
                 tables.Payment.id: payment_id,
                 tables.Payment.external_id: response_json['id'],
@@ -95,7 +91,7 @@ class PaymentService:
         )
 
     async def refund(self, payment_id: UUID, handler_url: str):
-        async with self.session_maker() as session:
+        async with db.postgres.session_maker() as session:
             payment = await session.get(tables.Payment, payment_id)
             if payment is None:
                 raise PaymentDoesntExistError()
@@ -111,11 +107,8 @@ class PaymentService:
 
 
 @lru_cache
-def get_payment_service(
-    session_maker: Annotated[async_sessionmaker[AsyncSession], Depends(db.postgres.get_session_maker)]
-) -> PaymentService:
+def get_payment_service() -> PaymentService:
     return PaymentService(
-        session_maker=session_maker,
         yookassa_client=httpx.AsyncClient(
             base_url='https://api.yookassa.ru',
             auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key)
