@@ -3,7 +3,8 @@ import httpx
 import asyncio
 from typing import Any
 from uuid import uuid4
-from sqlalchemy import select, insert
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 
 import tables
 import db.postgres
@@ -49,20 +50,14 @@ async def capture_payment(yoo_payment: dict[str, Any], yookassa_client: httpx.As
     async with db.postgres.session_maker() as session:
         payment = (await session.execute(
             select(tables.Payment)
-            .where(tables.Payment.external_id==yoo_payment['id'])
+            .where(tables.Payment.external_id == yoo_payment['id'])
         )).scalar_one()
         session.expunge(payment)
 
         await session.execute(insert(tables.ChargeRequest).values({
             tables.ChargeRequest.id: uuid4(),
             tables.ChargeRequest.payment_id: payment_id,
-            tables.ChargeRequest.handler_url: handler_url
-        }))
+            tables.ChargeRequest.handler_url: handler_url,
+            tables.ChargeRequest.captured: False
+        }).on_conflict_do_nothing())
         await session.commit()
-
-    response = await yookassa_client.post(
-        url=f'/v3/payments/{payment.external_id}/capture',
-        headers={'Idempotence-Key': str(uuid4())},
-        json={'amount': {'value': str(payment.roubles), 'currency': 'RUB'}}
-    )
-    assert response.status_code == 200, response.text  # TODO

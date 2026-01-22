@@ -3,7 +3,6 @@ import asyncio
 import logging
 from uuid import uuid4
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import tables
 import db.postgres
@@ -22,74 +21,81 @@ async def refund_handlers_notification_loop(
 
         async with db.postgres.session_maker() as session:
             for refund in (await session.execute(select(tables.RefundRequest))).scalars():
-                await notify_refund_handler(refund, session, yookassa_client, handler_client)
+                session.expunge(refund)
+                await notify_refund_handler(refund, yookassa_client, handler_client)
 
 
 async def notify_refund_handler(
-    refund: tables.RefundRequest,
-    session: AsyncSession,
+    refund_request: tables.RefundRequest,
     yookassa_client: httpx.AsyncClient,
     handler_client: httpx.AsyncClient
 ):
 
-    payment = (await session.execute(
-        select(tables.Payment)
-        .where(tables.Payment.id==refund.payment_id)
-    )).scalar_one_or_none()
+    async with db.postgres.session_maker() as session:
+        payment = (await session.execute(
+            select(tables.Payment)
+            .where(tables.Payment.id==refund_request.payment_id)
+        )).scalar_one()
 
-    if payment is None:
-        logger.warning(f'refund request {refund.id} points to non-existent payment {refund.payment_id}, ignoring')
-        await session.delete(refund)
-        await session.commit()
-        return
-
-    # https://yookassa.ru/developers/api#create_refund
-    response = await yookassa_client.post(
-        url='/v3/refunds',
-        headers={'Idempotence-Key': str(uuid4())},
-        json={
-            'payment_id': payment.external_id,
-            'amount': {'value': str(payment.roubles), 'currency': 'RUB'}
-        }
-    )
-
-    # Возврат может быть уже сделан
-    if response.status_code == 400 and response.json()['code'] == 'invalid_request':
-        # https://yookassa.ru/developers/api#get_refunds_list
-        response = await yookassa_client.get(
+    if not refund_request.refunded:
+        # https://yookassa.ru/developers/api#create_refund
+        response = await yookassa_client.post(
             url='/v3/refunds',
             headers={'Idempotence-Key': str(uuid4())},
-            params={
-                'payment_id': str(payment.external_id)
+            json={
+                'payment_id': payment.external_id,
+                'amount': {'value': str(payment.roubles), 'currency': 'RUB'}
             }
         )
-        assert response.status_code == 200, response.text  # TODO
-        assert len(response.json()['items']) > 0
-    else:
-        assert response.status_code == 200, response.text  # TODO
-        response_json = response.json()
-        assert response_json['status'] == 'succeeded', response_json['status']
+
+        # Возврат может быть уже сделан
+        if response.status_code == 400 and response.json()['code'] == 'invalid_request':
+            # https://yookassa.ru/developers/api#get_refunds_list
+            response = await yookassa_client.get(
+                url='/v3/refunds',
+                headers={'Idempotence-Key': str(uuid4())},
+                params={
+                    'payment_id': str(payment.external_id)
+                }
+            )
+            assert response.status_code == 200, response.text  # TODO
+            assert len(response.json()['items']) > 0
+        else:
+            assert response.status_code == 200, response.text  # TODO
+            response_json = response.json()
+            assert response_json['status'] == 'succeeded', response_json['status']
+
+        async with db.postgres.session_maker() as session:
+            await session.execute(
+                update(tables.RefundRequest)
+                .where(tables.RefundRequest.id == refund_request.id)
+                .values({tables.RefundRequest.refunded: True})
+            )
+            await session.commit()
+
+    # Далее выполняется только если 'succeeded'
 
     error_msg = None
     try:
         response = await handler_client.post(
-            url=refund.handler_url,
+            url=refund_request.handler_url,
             json={'payment_id': str(payment.id)},
             timeout=settings.notification_timeout
         )
         if response.status_code != 200:
-            error_msg = f'got status {response.status_code} from "charged" handler "{refund.handler_url}"'
+            error_msg = f'got status {response.status_code} from "charged" handler "{refund_request.handler_url}"'
     except httpx.ConnectError:
-        error_msg = f'couldn\'t connect to "charged" handler "{refund.handler_url}"'
+        error_msg = f'couldn\'t connect to "charged" handler "{refund_request.handler_url}"'
 
     if error_msg is not None:
         logger.warning(error_msg)
         return
 
-    await session.execute(
-        update(tables.Payment)
-        .where(tables.Payment.id==payment.id)
-        .values({tables.Payment.status: 'refunded'})
-    )
-    await session.delete(refund)
-    await session.commit()
+    async with db.postgres.session_maker() as session:
+        await session.execute(
+            update(tables.Payment)
+            .where(tables.Payment.id==payment.id)
+            .values({tables.Payment.status: 'refunded'})
+        )
+        await session.delete(refund_request)
+        await session.commit()

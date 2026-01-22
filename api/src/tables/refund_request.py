@@ -9,6 +9,7 @@ from .payment import Payment
 class RefundRequest(Base):
     __tablename__ = 'refund_request'
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, index=True)
-    payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id), index=True)
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'), unique=True)
     handler_url: Mapped[str] = mapped_column()
+    refunded: Mapped[bool] = mapped_column()
