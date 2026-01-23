@@ -3,7 +3,7 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='bill_api_')
+    model_config = SettingsConfigDict(env_file='.env', env_prefix='bill_api_')
 
     notification_timeout: float = Field(default=5.0)
 
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
 
 class PostgresSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='bill_postgres_')
+    model_config = SettingsConfigDict(env_file='.env', env_prefix='bill_postgres_')
 
     host: str = Field(default='127.0.0.1')
     port: int = Field(default=5432)
