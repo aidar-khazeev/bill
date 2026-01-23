@@ -12,4 +12,5 @@ class ChargeRequest(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'), unique=True)
     handler_url: Mapped[str] = mapped_column()
-    captured: Mapped[bool] = mapped_column()
+    captured: Mapped[bool] = mapped_column(default=False)
+    sent_to_topic: Mapped[bool] = mapped_column(default=False)

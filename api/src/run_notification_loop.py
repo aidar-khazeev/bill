@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import logging
+import aiokafka
 
 from loops.capture import payments_capture_loop
 from loops.notify_charge import charge_handlers_notification_loop
@@ -18,12 +19,17 @@ async def run_loop():
     )
     handler_client = httpx.AsyncClient()
 
+    kafka_producer = aiokafka.AIOKafkaProducer(bootstrap_servers='localhost:19092')
+    await kafka_producer.start()
 
-    await asyncio.gather(
-        payments_capture_loop(yookassa_client),
-        charge_handlers_notification_loop(yookassa_client, handler_client),
-        refund_handlers_notification_loop(yookassa_client, handler_client)
-    )
+    try:
+        await asyncio.gather(
+            payments_capture_loop(yookassa_client),
+            charge_handlers_notification_loop(yookassa_client, handler_client, kafka_producer),
+            refund_handlers_notification_loop(yookassa_client, handler_client, kafka_producer)
+        )
+    finally:
+        await kafka_producer.stop()
 
 
 if __name__ == '__main__':

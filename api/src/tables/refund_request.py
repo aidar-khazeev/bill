@@ -13,3 +13,4 @@ class RefundRequest(Base):
     payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'), unique=True)
     handler_url: Mapped[str] = mapped_column()
     refunded: Mapped[bool] = mapped_column()
+    sent_to_topic: Mapped[bool] = mapped_column(default=False)

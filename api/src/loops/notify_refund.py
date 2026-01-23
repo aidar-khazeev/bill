@@ -1,7 +1,8 @@
 import httpx
 import asyncio
 import logging
-from uuid import uuid4
+import aiokafka
+import json
 from sqlalchemy import select, update
 
 import tables
@@ -14,7 +15,8 @@ logger = logging.getLogger('payment-service-notify-refund-loop')
 
 async def refund_handlers_notification_loop(
     yookassa_client: httpx.AsyncClient,
-    handler_client: httpx.AsyncClient
+    handler_client: httpx.AsyncClient,
+    kafka_producer: aiokafka.AIOKafkaProducer
 ):
     while True:
         await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
@@ -25,14 +27,15 @@ async def refund_handlers_notification_loop(
                 .join(tables.Payment, tables.RefundRequest.payment_id == tables.Payment.id)
             )).tuples():
                 session.expunge(refund)
-                await notify_refund_handler(payment, refund, yookassa_client, handler_client)
+                await notify_refund_handler(payment, refund, yookassa_client, handler_client, kafka_producer)
 
 
 async def notify_refund_handler(
     payment: tables.Payment,
     refund_request: tables.RefundRequest,
     yookassa_client: httpx.AsyncClient,
-    handler_client: httpx.AsyncClient
+    handler_client: httpx.AsyncClient,
+    kafka_producer: aiokafka.AIOKafkaProducer
 ):
     if not refund_request.refunded:
         # https://yookassa.ru/developers/api#create_refund
@@ -58,6 +61,21 @@ async def notify_refund_handler(
             await session.commit()
 
     # Далее выполняется только если 'succeeded'
+
+    if not refund_request.sent_to_topic:
+        await kafka_producer.send_and_wait(
+            topic='refund',
+            value=json.dumps({'payment_id': str(payment.id)}).encode()
+        )
+
+        async with db.postgres.session_maker() as session:
+            await session.execute(
+                update(tables.RefundRequest)
+                .where(tables.RefundRequest.id == refund_request.id)
+                .values({tables.RefundRequest.sent_to_topic: True})
+            )
+            await session.delete(refund_request)
+            await session.commit()
 
     error_msg = None
     try:

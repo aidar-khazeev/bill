@@ -1,0 +1,3 @@
+include:
+  - ./postgres/compose.yml
+  - ./kafka/compose.dev.yml

@@ -3,7 +3,7 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_prefix='bill_api_')
+    model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_api_')
 
     notification_timeout: float = Field(default=5.0)
 
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
 
 class PostgresSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_prefix='bill_postgres_')
+    model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_postgres_')
 
     host: str = Field(default='127.0.0.1')
     port: int = Field(default=5432)
@@ -26,8 +26,12 @@ class PostgresSettings(BaseSettings):
         return f'{scheme}://{self.user}:{self.password}@{self.host}:{self.port}/{db or self.db}'
 
 
+class KafkaSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_kafka_')
+
+
 class YookassaSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_prefix='bill_yookassa_')
+    model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_yookassa_')
 
     shop_id: str
     secret_key: str

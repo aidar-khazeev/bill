@@ -1,7 +1,8 @@
 import asyncio
 import httpx
 import logging
-from uuid import uuid4
+import aiokafka
+import json
 from sqlalchemy import select, update
 
 import tables
@@ -14,7 +15,8 @@ logger = logging.getLogger('payment-service-notify-charge-loop')
 
 async def charge_handlers_notification_loop(
     yookassa_client: httpx.AsyncClient,
-    handler_client: httpx.AsyncClient
+    handler_client: httpx.AsyncClient,
+    kafka_producer: aiokafka.AIOKafkaProducer
 ):
     while True:
         await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
@@ -25,14 +27,15 @@ async def charge_handlers_notification_loop(
                 .join(tables.Payment, tables.ChargeRequest.payment_id == tables.Payment.id)
             )).tuples():
                 session.expunge(charge)
-                await notify_charge_handler(payment, charge, yookassa_client, handler_client)
+                await notify_charge_handler(payment, charge, yookassa_client, handler_client, kafka_producer)
 
 
 async def notify_charge_handler(
     payment: tables.Payment,
     charge_request: tables.ChargeRequest,
     yookassa_client: httpx.AsyncClient,
-    handler_client: httpx.AsyncClient
+    handler_client: httpx.AsyncClient,
+    kafka_producer: aiokafka.AIOKafkaProducer
 ):
     if not charge_request.captured:
         # https://yookassa.ru/developers/api#capture_payment
@@ -57,6 +60,21 @@ async def notify_charge_handler(
 
     # Далее выполняется только если 'succeeded'
 
+    if not charge_request.sent_to_topic:
+        await kafka_producer.send_and_wait(
+            topic='charge',
+            value=json.dumps({'payment_id': str(payment.id)}).encode()
+        )
+
+        async with db.postgres.session_maker() as session:
+            await session.execute(
+                update(tables.ChargeRequest)
+                .where(tables.ChargeRequest.id == charge_request.id)
+                .values({tables.ChargeRequest.sent_to_topic: True})
+            )
+            await session.delete(charge_request)
+            await session.commit()
+
     error_msg = None
     try:
         response = await handler_client.post(
@@ -76,7 +94,7 @@ async def notify_charge_handler(
     async with db.postgres.session_maker() as session:
         await session.execute(
             update(tables.Payment)
-            .where(tables.Payment.id==payment.id)
+            .where(tables.Payment.id == payment.id)
             .values({tables.Payment.status: 'succeeded'})
         )
         await session.delete(charge_request)
