@@ -20,22 +20,20 @@ async def charge_handlers_notification_loop(
         await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
-            for charge in (await session.execute(select(tables.ChargeRequest))).scalars():
+            for charge, payment in (await session.execute(
+                select(tables.ChargeRequest, tables.Payment)
+                .join(tables.Payment, tables.ChargeRequest.payment_id == tables.Payment.id)
+            )).tuples():
                 session.expunge(charge)
-                await notify_charge_handler(charge, yookassa_client, handler_client)
+                await notify_charge_handler(payment, charge, yookassa_client, handler_client)
 
 
 async def notify_charge_handler(
+    payment: tables.Payment,
     charge_request: tables.ChargeRequest,
     yookassa_client: httpx.AsyncClient,
     handler_client: httpx.AsyncClient
 ):
-    async with db.postgres.session_maker() as session:
-        payment = (await session.execute(
-            select(tables.Payment)
-            .where(tables.Payment.id==charge_request.payment_id)
-        )).scalar_one()
-
     if not charge_request.captured:
         # https://yookassa.ru/developers/api#get_payment
         response = await yookassa_client.get(

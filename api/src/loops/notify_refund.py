@@ -9,7 +9,7 @@ import db.postgres
 from settings import settings
 
 
-logger = logging.getLogger('payment-service-refund-charge-loop')
+logger = logging.getLogger('payment-service-notify-refund-loop')
 
 
 async def refund_handlers_notification_loop(
@@ -20,23 +20,20 @@ async def refund_handlers_notification_loop(
         await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
-            for refund in (await session.execute(select(tables.RefundRequest))).scalars():
+            for refund, payment in (await session.execute(
+                select(tables.RefundRequest, tables.Payment)
+                .join(tables.Payment, tables.RefundRequest.payment_id == tables.Payment.id)
+            )).tuples():
                 session.expunge(refund)
-                await notify_refund_handler(refund, yookassa_client, handler_client)
+                await notify_refund_handler(payment, refund, yookassa_client, handler_client)
 
 
 async def notify_refund_handler(
+    payment: tables.Payment,
     refund_request: tables.RefundRequest,
     yookassa_client: httpx.AsyncClient,
     handler_client: httpx.AsyncClient
 ):
-
-    async with db.postgres.session_maker() as session:
-        payment = (await session.execute(
-            select(tables.Payment)
-            .where(tables.Payment.id==refund_request.payment_id)
-        )).scalar_one()
-
     if not refund_request.refunded:
         # https://yookassa.ru/developers/api#create_refund
         response = await yookassa_client.post(

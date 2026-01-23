@@ -64,7 +64,7 @@ class PaymentService:
             raise ExternalPaymentServiceError()
 
         if response.status_code != 200:
-            logger.error(f'{response.status_code}: {response.text}')
+            logger.error(f'got status code {response.status_code}: {response.text}')
             raise ExternalPaymentServiceError()
 
         # При ошибке, если payment все же создался,
