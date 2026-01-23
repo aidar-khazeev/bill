@@ -27,10 +27,11 @@ class PostgresSettings(BaseSettings):
 
 
 class YookassaSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='bill_yookassa_')
+    model_config = SettingsConfigDict(env_file='.env', env_prefix='bill_yookassa_')
 
     shop_id: str
     secret_key: str
+    base_url: str = Field(default='https://api.yookassa.ru')
 
 
 settings = Settings()

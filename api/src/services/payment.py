@@ -115,7 +115,7 @@ class PaymentService:
 def get_payment_service() -> PaymentService:
     return PaymentService(
         yookassa_client=httpx.AsyncClient(
-            base_url='https://api.yookassa.ru',
+            base_url=yookassa_settings.base_url,
             auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key)
         )
     )

@@ -13,7 +13,7 @@ logger = logging.getLogger('payment-service-loop')
 
 async def run_loop():
     yookassa_client = yookassa_client=httpx.AsyncClient(
-        base_url='https://api.yookassa.ru',
+        base_url=yookassa_settings.base_url,
         auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key)
     )
     handler_client = httpx.AsyncClient()
