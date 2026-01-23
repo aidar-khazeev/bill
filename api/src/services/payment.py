@@ -105,7 +105,8 @@ class PaymentService:
             await session.execute(insert(tables.RefundRequest).values({
                 tables.RefundRequest.id: uuid4(),
                 tables.RefundRequest.payment_id: payment_id,
-                tables.RefundRequest.handler_url: handler_url
+                tables.RefundRequest.handler_url: handler_url,
+                tables.RefundRequest.refunded: False
             }))
             await session.commit()
 
