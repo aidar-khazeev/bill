@@ -35,10 +35,10 @@ async def payments_capture_loop(yookassa_client: httpx.AsyncClient):
         next_cursor = response_json.get('next_cursor', None)
 
         for yoo_payment in response_json['items']:
-            await capture_payment(yoo_payment, yookassa_client)
+            await capture_payment(yoo_payment)
 
 
-async def capture_payment(yoo_payment: dict[str, Any], yookassa_client: httpx.AsyncClient):
+async def capture_payment(yoo_payment: dict[str, Any]):
     metadata = yoo_payment['metadata']
     if not metadata:
         logger.warning(f'payment {yoo_payment['id']} has no metadata, ignoring')

@@ -41,7 +41,7 @@ async def notify_refund_handler(
             headers={'Idempotence-Key': str(uuid4())},
             json={
                 'payment_id': payment.external_id,
-                'amount': {'value': str(payment.roubles), 'currency': 'RUB'}
+                'amount': {'value': str(payment.amount), 'currency': payment.currency}
             }
         )
 

@@ -33,7 +33,10 @@ class ChargeInfo(BaseModel):
 class PaymentService:
     yookassa_client: httpx.AsyncClient
 
-    async def charge(self, user_id: UUID, handler_url: str, return_url: str, roubles: Decimal):
+    async def charge(
+        self, user_id: UUID, handler_url: str, return_url: str,
+        amount: Decimal, currency: str
+    ):
         payment_id = uuid4()
 
         # https://yookassa.ru/developers/api#create_payment
@@ -43,8 +46,8 @@ class PaymentService:
                 headers={'Idempotence-Key': str(uuid4())},
                 json={
                     'amount': {
-                        'value': str(roubles),
-                        'currency': 'RUB'
+                        'value': str(amount),
+                        'currency': currency
                     },
                     'confirmation': {
                         'type': 'redirect',
@@ -80,7 +83,8 @@ class PaymentService:
                 tables.Payment.external_id: response_json['id'],
                 tables.Payment.user_id: user_id,
                 tables.Payment.created_at: datetime.now(),
-                tables.Payment.roubles: roubles,
+                tables.Payment.amount: amount,
+                tables.Payment.currency: currency,
                 tables.Payment.status: 'created'
             }))
             await session.commit()

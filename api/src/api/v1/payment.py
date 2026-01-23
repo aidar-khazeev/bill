@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends
@@ -12,7 +12,8 @@ router = APIRouter()
 
 class ChargeBody(BaseModel):
     user_id: UUID
-    roubles: Decimal = Field(gt=0.0)
+    amount: Decimal = Field(gt=0.0)
+    currency: Literal['RUB'] = Field(default='RUB')
     handler_url: HttpUrl = Field(description=
         'Клиенту необходимо указать URL, по которому он будет уведомлен о совершении платежа<br>'
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
@@ -35,7 +36,8 @@ async def charge(
         user_id=body.user_id,
         handler_url=str(body.handler_url),
         return_url=str(body.return_url),
-        roubles=body.roubles
+        amount=body.amount,
+        currency=body.currency
     )
 
 

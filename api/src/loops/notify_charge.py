@@ -51,7 +51,7 @@ async def notify_charge_handler(
             response = await yookassa_client.post(
                 url=f'/v3/payments/{payment.external_id}/capture',
                 headers={'Idempotence-Key': str(uuid4())},
-                json={'amount': {'value': str(payment.roubles), 'currency': 'RUB'}}
+                json={'amount': {'value': str(payment.amount), 'currency': payment.currency}}
             )
             assert response.status_code == 200, response.text  # TODO
             response_json = response.json()
