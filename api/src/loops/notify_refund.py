@@ -38,29 +38,16 @@ async def notify_refund_handler(
         # https://yookassa.ru/developers/api#create_refund
         response = await yookassa_client.post(
             url='/v3/refunds',
-            headers={'Idempotence-Key': str(uuid4())},
+            headers={'Idempotence-Key': str(payment.id)},  # !
             json={
                 'payment_id': payment.external_id,
                 'amount': {'value': str(payment.amount), 'currency': payment.currency}
             }
         )
 
-        # Возврат может быть уже сделан
-        if response.status_code == 400 and response.json()['code'] == 'invalid_request':
-            # https://yookassa.ru/developers/api#get_refunds_list
-            response = await yookassa_client.get(
-                url='/v3/refunds',
-                headers={'Idempotence-Key': str(uuid4())},
-                params={
-                    'payment_id': str(payment.external_id)
-                }
-            )
-            assert response.status_code == 200, response.text  # TODO
-            assert len(response.json()['items']) > 0
-        else:
-            assert response.status_code == 200, response.text  # TODO
-            response_json = response.json()
-            assert response_json['status'] == 'succeeded', response_json['status']
+        assert response.status_code == 200, response.text  # TODO
+        response_json = response.json()
+        assert response_json['status'] == 'succeeded', response_json['status']
 
         async with db.postgres.session_maker() as session:
             await session.execute(
