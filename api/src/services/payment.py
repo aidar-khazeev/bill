@@ -95,13 +95,13 @@ class PaymentService:
         )
 
     async def refund(self, payment_id: UUID, handler_url: str):
+        # Мы могли бы сразу отправить post запрос на yookassa, и ответ вернуть клиенту
+        # Но у yookassa после выполнения refund на своей стороне могут возникнуть проблемы при возврате ответа
         async with db.postgres.session_maker() as session:
             payment = await session.get(tables.Payment, payment_id)
             if payment is None:
                 raise PaymentDoesntExistError()
 
-            # Будет проверен один раз в отдельном процессе,
-            # если post запрос не завершится успешно
             await session.execute(insert(tables.RefundRequest).values({
                 tables.RefundRequest.id: uuid4(),
                 tables.RefundRequest.payment_id: payment_id,

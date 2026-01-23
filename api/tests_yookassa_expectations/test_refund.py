@@ -47,32 +47,22 @@ def test_double_refund(yookassa_client: httpx.Client):
     assert response_json['status'] == 'succeeded', response.text
     payment_id = response_json['id']
 
-    response = create_refund(yookassa_client, payment_id, 100.0)
-    assert response.status_code == 200, response.text
-
-    response = create_refund(yookassa_client, payment_id, 100.0)
-    response_json = response.json()
-    assert response.status_code == 400, response.text
-    assert response_json['type'] == 'error'
-    assert response_json['parameter'] == 'amount.value'
-    assert response_json['code'] == 'invalid_request'
-
-
-def test_double_refund_same_idempotence_key(yookassa_client: httpx.Client):
-    response = create_payment(yookassa_client, roubles=100.00)
-    assert response.status_code == 200, response.text
-    response_json = response.json()
-
-    assert response_json['status'] == 'succeeded', response.text
-    payment_id = response_json['id']
-
     idempotence_key = str(uuid4())
 
     response = create_refund(yookassa_client, id=payment_id, roubles=100.0, idempotence_key=idempotence_key)
     assert response.status_code == 200, response.text
 
+    # Same idempotence key
     response = create_refund(yookassa_client, id=payment_id, roubles=100.0, idempotence_key=idempotence_key)
     assert response.status_code == 200, response.text
+
+    # Other idempotence key
+    response = create_refund(yookassa_client, id=payment_id, roubles=100.0, idempotence_key=str(uuid4()))
+    response_json = response.json()
+    assert response.status_code == 400, response.text
+    assert response_json['type'] == 'error'
+    assert response_json['parameter'] == 'amount.value'
+    assert response_json['code'] == 'invalid_request'
 
 
 def test_double_refund_multiple_partial(yookassa_client: httpx.Client):
