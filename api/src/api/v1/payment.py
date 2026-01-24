@@ -43,6 +43,8 @@ async def charge(
 
 class RefundBody(BaseModel):
     payment_id: UUID
+    amount: Decimal = Field(gt=0.0)
+    currency: Literal['RUB'] = Field(default='RUB')
     handler_url: HttpUrl = Field(description=
         'Клиенту необходимо указать URL, по которому он будет уведомлен о совершении возврата<br>'
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
@@ -59,5 +61,7 @@ async def refund(
 ) -> None:
     await payments_service.refund(
         payment_id=body.payment_id,
-        handler_url=str(body.handler_url)
+        handler_url=str(body.handler_url),
+        amount=body.amount,
+        currency=body.currency
     )

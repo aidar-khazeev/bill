@@ -34,8 +34,12 @@ class PaymentService:
     yookassa_client: httpx.AsyncClient
 
     async def charge(
-        self, user_id: UUID, handler_url: str, return_url: str,
-        amount: Decimal, currency: str
+        self,
+        user_id: UUID,
+        handler_url: str,
+        return_url: str,
+        amount: Decimal,
+        currency: str
     ):
         payment_id = uuid4()
 
@@ -53,9 +57,8 @@ class PaymentService:
                         'type': 'redirect',
                         'return_url': str(return_url)
                     },
-                    # Проходим 2 стадии
                     # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#capture-and-cancel
-                    'capture': False,
+                    'capture': True,
                     'metadata': {
                         'payment_id': str(payment_id),
                         'handler_url': handler_url
@@ -94,7 +97,13 @@ class PaymentService:
             confirmation_url=HttpUrl(response_json['confirmation']['confirmation_url'])
         )
 
-    async def refund(self, payment_id: UUID, handler_url: str):
+    async def refund(
+        self,
+        payment_id: UUID,
+        handler_url: str,
+        amount: Decimal,
+        currency: str
+    ):
         # Мы могли бы сразу отправить post запрос на yookassa, и ответ вернуть клиенту
         # Но у yookassa после выполнения refund на своей стороне могут возникнуть проблемы при возврате ответа
         async with db.postgres.session_maker() as session:
@@ -110,8 +119,8 @@ class PaymentService:
                 tables.Refund.payment_id: payment_id,
                 tables.Refund.created_at: datetime.now(),
                 tables.Refund.status: 'created',
-                tables.Refund.amount: payment.amount,
-                tables.Refund.currency: payment.currency
+                tables.Refund.amount: amount,
+                tables.Refund.currency: currency
             }))
 
             await session.execute(insert(tables.RefundRequest).values({

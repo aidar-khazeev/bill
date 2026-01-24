@@ -37,26 +37,26 @@ async def notify_charge_handler(
     handler_client: httpx.AsyncClient,
     kafka_producer: aiokafka.AIOKafkaProducer
 ):
-    if not charge_request.captured:
-        # https://yookassa.ru/developers/api#capture_payment
-        response = await yookassa_client.post(
-            url=f'/v3/payments/{payment.external_id}/capture',
-            headers={'Idempotence-Key': str(payment.id)},  # !
-            json={'amount': {'value': str(payment.amount), 'currency': payment.currency}}
-        )
-        assert response.status_code == 200, response.text  # TODO
-        response_json = response.json()
+    # if not charge_request.captured:
+    #     # https://yookassa.ru/developers/api#capture_payment
+    #     response = await yookassa_client.post(
+    #         url=f'/v3/payments/{payment.external_id}/capture',
+    #         headers={'Idempotence-Key': str(payment.id)},  # !
+    #         json={'amount': {'value': str(payment.amount), 'currency': payment.currency}}
+    #     )
+    #     assert response.status_code == 200, response.text  # TODO
+    #     response_json = response.json()
 
-        if response_json['status'] != 'succeeded':
-            raise RuntimeError(response_json['status'])  # TODO
+    #     if response_json['status'] != 'succeeded':
+    #         raise RuntimeError(response_json['status'])  # TODO
 
-        async with db.postgres.session_maker() as session:
-            await session.execute(
-                update(tables.ChargeRequest)
-                .where(tables.ChargeRequest.id == charge_request.id)
-                .values({tables.ChargeRequest.captured: True})
-            )
-            await session.commit()
+    #     async with db.postgres.session_maker() as session:
+    #         await session.execute(
+    #             update(tables.ChargeRequest)
+    #             .where(tables.ChargeRequest.id == charge_request.id)
+    #             .values({tables.ChargeRequest.captured: True})
+    #         )
+    #         await session.commit()
 
     # Далее выполняется только если 'succeeded'
 

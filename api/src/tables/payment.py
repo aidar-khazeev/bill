@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-Status = Literal['created', 'succeeded']
+Status = Literal['created', 'succeeded', 'cancelled']
 
 
 class Payment(Base):
