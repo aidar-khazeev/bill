@@ -102,11 +102,22 @@ class PaymentService:
             if payment is None:
                 raise PaymentDoesntExistError()
 
+            refund_id = uuid4()
+
+            await session.execute(insert(tables.Refund).values({
+                tables.Refund.id: refund_id,
+                tables.Refund.external_id: None,
+                tables.Refund.payment_id: payment_id,
+                tables.Refund.created_at: datetime.now(),
+                tables.Refund.status: 'created',
+                tables.Refund.amount: payment.amount,
+                tables.Refund.currency: payment.currency
+            }))
+
             await session.execute(insert(tables.RefundRequest).values({
                 tables.RefundRequest.id: uuid4(),
-                tables.RefundRequest.payment_id: payment_id,
-                tables.RefundRequest.handler_url: handler_url,
-                tables.RefundRequest.refunded: False
+                tables.RefundRequest.refund_id: refund_id,
+                tables.RefundRequest.handler_url: handler_url
             }))
             await session.commit()
 

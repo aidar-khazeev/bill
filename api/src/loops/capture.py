@@ -25,9 +25,8 @@ async def payments_capture_loop(yookassa_client: httpx.AsyncClient):
             url='/v3/payments',
             params={
                 'status': 'waiting_for_capture',
-                'next_cursor': next_cursor,
                 'limit': 100  # max is 100
-            }
+            } | ({'cursor': next_cursor} if next_cursor else {})
         )
         assert response.status_code == 200, response.text  # TODO
         response_json = response.json()
@@ -46,7 +45,7 @@ async def capture_payment(yoo_payment: dict[str, Any], yookassa_client: httpx.As
             url=f'v3/payments/{yoo_payment['id']}/cancel',
             headers={'Idempotence-Key': str(uuid4())}
         )
-        assert response.status_code == 200, response.text  # noqa
+        assert response.status_code == 200, response.text
         return
 
     payment_id = metadata['payment_id']
@@ -62,7 +61,6 @@ async def capture_payment(yoo_payment: dict[str, Any], yookassa_client: httpx.As
         await session.execute(insert(tables.ChargeRequest).values({
             tables.ChargeRequest.id: uuid4(),
             tables.ChargeRequest.payment_id: payment_id,
-            tables.ChargeRequest.handler_url: handler_url,
-            tables.ChargeRequest.captured: False
+            tables.ChargeRequest.handler_url: handler_url
         }).on_conflict_do_nothing())
         await session.commit()

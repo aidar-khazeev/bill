@@ -3,18 +3,20 @@ from typing import Literal
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
+from .payment import Payment
 
 
 Status = Literal['created', 'succeeded']
 
 
-class Payment(Base):
-    __tablename__ = 'payment'
+class Refund(Base):
+    __tablename__ = 'refund'
 
     id: Mapped[UUID] = mapped_column(primary_key=True, index=True)
-    external_id: Mapped[str] = mapped_column(index=True)
-    user_id: Mapped[UUID] = mapped_column(index=True)
+    payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'), unique=True)
+    external_id: Mapped[str | None] = mapped_column(index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column()
     status: Mapped[Status] = mapped_column()
 

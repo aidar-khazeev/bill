@@ -22,29 +22,34 @@ async def refund_handlers_notification_loop(
         await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
-            for refund, payment in (await session.execute(
-                select(tables.RefundRequest, tables.Payment)
-                .join(tables.Payment, tables.RefundRequest.payment_id == tables.Payment.id)
+            for refund_request, refund, payment in (await session.execute(
+                select(tables.RefundRequest, tables.Refund, tables.Payment)
+                .join(tables.Refund, tables.RefundRequest.refund_id == tables.Refund.id)
+                .join(tables.Payment, tables.Refund.payment_id == tables.Payment.id)
             )).tuples():
-                session.expunge(refund)
-                await notify_refund_handler(payment, refund, yookassa_client, handler_client, kafka_producer)
+                session.expunge_all()
+                await notify_refund_handler(refund, payment, refund_request, yookassa_client, handler_client, kafka_producer)
 
 
 async def notify_refund_handler(
+    refund: tables.Refund,
     payment: tables.Payment,
     refund_request: tables.RefundRequest,
     yookassa_client: httpx.AsyncClient,
     handler_client: httpx.AsyncClient,
     kafka_producer: aiokafka.AIOKafkaProducer
 ):
-    if not refund_request.refunded:
+    if refund.external_id is None:
         # https://yookassa.ru/developers/api#create_refund
         response = await yookassa_client.post(
             url='/v3/refunds',
-            headers={'Idempotence-Key': str(payment.id)},  # !
+            headers={'Idempotence-Key': str(refund.id)},  # !
             json={
                 'payment_id': payment.external_id,
-                'amount': {'value': str(payment.amount), 'currency': payment.currency}
+                'amount': {'value': str(refund.amount), 'currency': refund.currency},
+                'metadata': {
+                    'refund_id': str(refund.id)
+                }
             }
         )
 
@@ -54,9 +59,9 @@ async def notify_refund_handler(
 
         async with db.postgres.session_maker() as session:
             await session.execute(
-                update(tables.RefundRequest)
-                .where(tables.RefundRequest.id == refund_request.id)
-                .values({tables.RefundRequest.refunded: True})
+                update(tables.Refund)
+                .where(tables.Refund.id == refund.id)
+                .values({tables.Refund.external_id: response_json['id']})
             )
             await session.commit()
 
@@ -65,7 +70,7 @@ async def notify_refund_handler(
     if not refund_request.sent_to_topic:
         await kafka_producer.send_and_wait(
             topic='refund',
-            value=json.dumps({'payment_id': str(payment.id)}).encode()
+            value=json.dumps({'refund_id': str(refund.id)}).encode()
         )
 
         async with db.postgres.session_maker() as session:
@@ -74,14 +79,12 @@ async def notify_refund_handler(
                 .where(tables.RefundRequest.id == refund_request.id)
                 .values({tables.RefundRequest.sent_to_topic: True})
             )
-            await session.delete(refund_request)
-            await session.commit()
 
     error_msg = None
     try:
         response = await handler_client.post(
             url=refund_request.handler_url,
-            json={'payment_id': str(payment.id)},
+            json={'refund_id': str(refund.id)},
             timeout=settings.notification_timeout
         )
         if response.status_code != 200:
@@ -94,10 +97,5 @@ async def notify_refund_handler(
         return
 
     async with db.postgres.session_maker() as session:
-        await session.execute(
-            update(tables.Payment)
-            .where(tables.Payment.id==payment.id)
-            .values({tables.Payment.status: 'refunded'})
-        )
         await session.delete(refund_request)
         await session.commit()

@@ -37,16 +37,16 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_constraint(None, 'refund_request', type_='foreignkey')
+    op.drop_constraint(None, 'refund_request', type_='foreignkey')  # type: ignore
     op.create_foreign_key(op.f('refund_request_payment_id_fkey'), 'refund_request', 'payment', ['payment_id'], ['id'])
-    op.drop_constraint(None, 'refund_request', type_='unique')
+    op.drop_constraint(None, 'refund_request', type_='unique')  # type: ignore
     op.create_index(op.f('ix_refund_request_payment_id'), 'refund_request', ['payment_id'], unique=False)
     op.create_index(op.f('ix_refund_request_id'), 'refund_request', ['id'], unique=False)
     op.drop_column('refund_request', 'refunded')
 
-    op.drop_constraint(None, 'charge_request', type_='foreignkey')
+    op.drop_constraint(None, 'charge_request', type_='foreignkey')  # type: ignore
     op.create_foreign_key(op.f('charge_request_payment_id_fkey'), 'charge_request', 'payment', ['payment_id'], ['id'])
-    op.drop_constraint(None, 'charge_request', type_='unique')
+    op.drop_constraint(None, 'charge_request', type_='unique')  # type: ignore
     op.create_index(op.f('ix_charge_request_payment_id'), 'charge_request', ['payment_id'], unique=False)
     op.create_index(op.f('ix_charge_request_id'), 'charge_request', ['id'], unique=False)
     op.drop_column('charge_request', 'captured')

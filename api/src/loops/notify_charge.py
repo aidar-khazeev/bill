@@ -72,8 +72,6 @@ async def notify_charge_handler(
                 .where(tables.ChargeRequest.id == charge_request.id)
                 .values({tables.ChargeRequest.sent_to_topic: True})
             )
-            await session.delete(charge_request)
-            await session.commit()
 
     error_msg = None
     try:
