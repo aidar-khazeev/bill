@@ -15,8 +15,9 @@ class Payment(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, index=True)
     external_id: Mapped[str] = mapped_column(index=True)
     user_id: Mapped[UUID] = mapped_column(index=True)
-    created_at: Mapped[datetime] = mapped_column()
     status: Mapped[Status] = mapped_column()
 
     amount: Mapped[Decimal] = mapped_column()
     currency: Mapped[str] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column()

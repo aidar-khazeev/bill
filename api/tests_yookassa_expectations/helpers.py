@@ -7,7 +7,8 @@ import httpx
 def create_payment(
     yookassa_client: httpx.Client,
     roubles: float | str,
-    auto_capture: bool = True
+    auto_capture: bool = True,
+    bank_card_number: str = '5555555555554444'  # Without 3-D Secure
 ):
     # https://yookassa.ru/developers/api#create_payment
     return yookassa_client.post(
@@ -26,7 +27,8 @@ def create_payment(
             'payment_method_data': {
                 'type': 'bank_card',
                 'card': {
-                    'number': '5555555555554444',
+                    # https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing#test-bank-card
+                    'number': bank_card_number,
                     'expiry_year': '2030',
                     'expiry_month': '12',
                     'cardholder': 'XXX',
