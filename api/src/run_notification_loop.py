@@ -3,6 +3,7 @@ import httpx
 import logging
 import aiokafka
 
+from loops.refund import refund_loop
 from loops.poll_payments import payments_status_polling_loop
 from loops.notify_charge import charge_handlers_notification_loop
 from loops.notify_refund import refund_handlers_notification_loop
@@ -21,9 +22,10 @@ async def run_loop():
 
     try:
         await asyncio.gather(
+            refund_loop(yookassa_client),
             payments_status_polling_loop(yookassa_client),
-            charge_handlers_notification_loop(yookassa_client, handler_client, kafka_producer),
-            refund_handlers_notification_loop(yookassa_client, handler_client, kafka_producer)
+            charge_handlers_notification_loop(handler_client, kafka_producer),
+            refund_handlers_notification_loop(handler_client, kafka_producer)
         )
     finally:
         await kafka_producer.stop()

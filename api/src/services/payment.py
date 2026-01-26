@@ -80,7 +80,7 @@ class PaymentService:
 
         response_json = response.json()
 
-        async with db.postgres.session_maker() as session:
+        async with db.postgres.session_maker() as session, session.begin():
             await session.execute(insert(tables.Payment).values({
                 tables.Payment.id: payment_id,
                 tables.Payment.external_id: response_json['id'],
@@ -90,7 +90,6 @@ class PaymentService:
                 tables.Payment.currency: currency,
                 tables.Payment.status: 'created'
             }))
-            await session.commit()
 
         return ChargeInfo(
             payment_id=payment_id,
@@ -106,7 +105,8 @@ class PaymentService:
     ):
         # Мы могли бы сразу отправить post запрос на yookassa, и ответ вернуть клиенту
         # Но у yookassa после выполнения refund на своей стороне могут возникнуть проблемы при возврате ответа
-        async with db.postgres.session_maker() as session:
+        # Поэтому откладываем этот запрос в лупу
+        async with db.postgres.session_maker() as session, session.begin():
             payment = await session.get(tables.Payment, payment_id)
             if payment is None:
                 raise PaymentDoesntExistError()
@@ -128,7 +128,6 @@ class PaymentService:
                 tables.RefundRequest.refund_id: refund_id,
                 tables.RefundRequest.handler_url: handler_url
             }))
-            await session.commit()
 
 
 @lru_cache

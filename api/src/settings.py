@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     notification_timeout: float = Field(default=5.0)
 
     capture_loop_sleep_duration: float = Field(default=3.0)
+    refund_loop_sleep_duration: float = Field(default=3.0)
     notify_charge_loop_sleep_duration: float = Field(default=1.0)
-    notify_refund_loop_sleep_duration: float = Field(default=1.0)
+    payments_polling_loop_sleep_duration: float = Field(default=1.0)
 
 
 class PostgresSettings(BaseSettings):

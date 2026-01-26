@@ -16,7 +16,7 @@ logger = logging.getLogger('payment-service-status-fetch-loop')
 
 async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
     while True:
-        await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
+        await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
             for payment in (await session.execute(
@@ -33,7 +33,7 @@ async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
                 response_json = response.json()
 
                 if response_json['status'] == 'pending':
-                    return
+                    continue
 
                 await update_payment_status(yookassa_payment_data=response_json)
 

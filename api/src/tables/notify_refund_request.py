@@ -3,14 +3,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import ForeignKey
 
 from .base import Base
-from .payment import Payment
+from .refund import Refund
 
 
-class ChargeNotificationRequest(Base):
-    __tablename__ = 'charge_request'
+class RefundNotificationRequest(Base):
+    __tablename__ = 'refund_notification_request'
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'), unique=True)
+    refund_id: Mapped[UUID] = mapped_column(ForeignKey(Refund.id, ondelete='RESTRICT'), unique=True)
     handler_url: Mapped[str] = mapped_column()
-    captured: Mapped[bool] = mapped_column(default=False)
     sent_to_topic: Mapped[bool] = mapped_column(default=False)

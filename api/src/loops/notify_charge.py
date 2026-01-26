@@ -14,20 +14,19 @@ logger = logging.getLogger('payment-service-notify-charge-loop')
 
 
 async def charge_handlers_notification_loop(
-    yookassa_client: httpx.AsyncClient,
     handler_client: httpx.AsyncClient,
     kafka_producer: aiokafka.AIOKafkaProducer
 ):
     while True:
-        await asyncio.sleep(settings.notify_refund_loop_sleep_duration)
+        await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
-            for charge, payment in (await session.execute(
+            for notification_request, payment in (await session.execute(
                 select(tables.ChargeNotificationRequest, tables.Payment)
                 .join(tables.Payment, tables.ChargeNotificationRequest.payment_id == tables.Payment.id)
             )).tuples():
-                session.expunge(charge)
-                await notify_charge_handler(payment, charge, handler_client, kafka_producer)
+                session.expunge_all()
+                await notify_charge_handler(payment, notification_request, handler_client, kafka_producer)
 
 
 async def notify_charge_handler(
