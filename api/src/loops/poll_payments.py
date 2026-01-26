@@ -1,6 +1,7 @@
 import logging
 import httpx
 import asyncio
+from typing import Any
 from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -22,41 +23,50 @@ async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
                 select(tables.Payment)
                 .where(tables.Payment.status == 'created')
             )).scalars():
-                session.expunge_all()
-                await fetch_payment_status(yookassa_client, payment)
+                session.expunge(payment)
+
+                # https://yookassa.ru/developers/api#get_payments_list
+                response = await yookassa_client.get(
+                    url=f'/v3/payments/{payment.external_id}',
+                )
+                assert response.status_code == 200, response.text
+                response_json = response.json()
+
+                if response_json['status'] == 'pending':
+                    return
+
+                await update_payment_status(yookassa_payment_data=response_json)
 
 
-async def fetch_payment_status(yookassa_client: httpx.AsyncClient, payment: tables.Payment):
+async def update_payment_status(yookassa_payment_data: dict[str, Any]):
+    # У нас не используется веб-хук для оповещений от Yookassa, нет доменного имени
+    # Если бы использовался, то все запросы отправлялись бы тоже сюда
 
-    response = await yookassa_client.get(
-        url=f'/v3/payments/{payment.external_id}',
-    )
-    assert response.status_code == 200, response.text
-    response_json = response.json()
-
-    if response_json['status'] == 'pending':
+    metadata = yookassa_payment_data['metadata']
+    if not metadata:  # Все оплаты созданные сервисом указывают metadata
+        logger.warning(f'yookassa payment {yookassa_payment_data['id']} has no metadata, ignoring')
         return
 
-    metadata = response_json['metadata']
-    if not metadata:
-        logger.warning(f'payment {response_json['id']} has no metadata, ignoring')
+    status = yookassa_payment_data['status']
+
+    # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#payment-statuses
+    # Не должно происходить
+    # 'pending' отлавливаем по стэку выше
+    # 'waiting_for_capture' быть не может, так как не используем подтверждение оплаты
+    if status not in ('succeeded', 'cancelled'):
+        logger.warning(f'yookassa payment {yookassa_payment_data['id']} has unknown status "{status}", ignoring')
         return
 
     payment_id = metadata['payment_id']
     handler_url = metadata['handler_url']
 
-    async with db.postgres.session_maker() as session:
+    async with db.postgres.session_maker() as session, session.begin():
         await session.execute(update(tables.Payment).values({
-            tables.Payment.status: (
-                'succeeded' if response_json['status'] == 'succeeded' else
-                'cancelled'
-            )
+            tables.Payment.status: status
         }))
-
-        await session.execute(insert(tables.ChargeRequest).values({
-            tables.ChargeRequest.id: uuid4(),
-            tables.ChargeRequest.payment_id: payment_id,
-            tables.ChargeRequest.handler_url: handler_url
+        # Здесь порядок не имеет значения, главное чтобы был коммит
+        await session.execute(insert(tables.ChargeNotificationRequest).values({
+            tables.ChargeNotificationRequest.id: uuid4(),
+            tables.ChargeNotificationRequest.payment_id: payment_id,
+            tables.ChargeNotificationRequest.handler_url: handler_url
         }).on_conflict_do_nothing())
-
-        await session.commit()

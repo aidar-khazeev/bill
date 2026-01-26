@@ -9,9 +9,6 @@ from loops.notify_refund import refund_handlers_notification_loop
 from settings import yookassa_settings
 
 
-logger = logging.getLogger('payment-service-loop')
-
-
 async def run_loop():
     yookassa_client = yookassa_client=httpx.AsyncClient(
         base_url=yookassa_settings.base_url,

@@ -6,7 +6,7 @@ from .base import Base
 from .payment import Payment
 
 
-class ChargeRequest(Base):
+class ChargeNotificationRequest(Base):
     __tablename__ = 'charge_request'
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
