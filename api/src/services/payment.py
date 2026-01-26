@@ -36,7 +36,7 @@ class PaymentService:
     async def charge(
         self,
         user_id: UUID,
-        handler_url: str,
+        handler_url: str | None,
         return_url: str,
         amount: Decimal,
         currency: str
@@ -99,7 +99,7 @@ class PaymentService:
     async def refund(
         self,
         payment_id: UUID,
-        handler_url: str,
+        handler_url: str | None,
         amount: Decimal,
         currency: str
     ):
@@ -135,6 +135,7 @@ def get_payment_service() -> PaymentService:
     return PaymentService(
         yookassa_client=httpx.AsyncClient(
             base_url=yookassa_settings.base_url,
-            auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key)
+            auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key),
+            timeout=yookassa_settings.connection_timeout
         )
     )

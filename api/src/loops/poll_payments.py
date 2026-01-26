@@ -58,7 +58,7 @@ async def update_payment_status(yookassa_payment_data: dict[str, Any]):
         return
 
     payment_id = metadata['payment_id']
-    handler_url = metadata['handler_url']
+    handler_url = metadata.get('handler_url', None)
 
     async with db.postgres.session_maker() as session, session.begin():
         await session.execute(update(tables.Payment).values({

@@ -41,6 +41,7 @@ async def notify_charge_handler(
             topic='charge',
             value=json.dumps({'payment_id': str(payment.id)}).encode()
         )
+        logger.info(f'sent notification about payment {payment.id} to the "charge" topic')
         async with db.postgres.session_maker() as session:
             await session.execute(
                 update(tables.ChargeNotificationRequest)
@@ -48,21 +49,22 @@ async def notify_charge_handler(
                 .values({tables.ChargeNotificationRequest.sent_to_topic: True})
             )
 
-    error_msg = None
-    try:
-        response = await handler_client.post(
-            url=charge_request.handler_url,
-            json={'payment_id': str(payment.id)},
-            timeout=settings.notification_timeout
-        )
-        if response.status_code != 200:
-            error_msg = f'got status {response.status_code} from "charged" handler "{charge_request.handler_url}"'
-    except httpx.ConnectError:
-        error_msg = f'couldn\'t connect to "charged" handler "{charge_request.handler_url}"'
+    if charge_request.handler_url:
+        error_msg = None
+        try:
+            response = await handler_client.post(
+                url=charge_request.handler_url,
+                json={'payment_id': str(payment.id)},
+                timeout=settings.notification_timeout
+            )
+            if response.status_code != 200:
+                error_msg = f'got status {response.status_code} from "charged" handler "{charge_request.handler_url}"'
+        except httpx.ConnectError:
+            error_msg = f'couldn\'t connect to "charged" handler "{charge_request.handler_url}"'
 
-    if error_msg is not None:
-        logger.warning(error_msg)
-        return
+        if error_msg is not None:
+            logger.warning(error_msg)
+            return
 
     async with db.postgres.session_maker() as session:
         await session.execute(

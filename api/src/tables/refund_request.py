@@ -11,4 +11,4 @@ class RefundRequest(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     refund_id: Mapped[UUID] = mapped_column(ForeignKey(Refund.id, ondelete='RESTRICT'), unique=True)
-    handler_url: Mapped[str] = mapped_column()
+    handler_url: Mapped[str | None] = mapped_column(nullable=True)

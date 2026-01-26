@@ -37,6 +37,7 @@ class YookassaSettings(BaseSettings):
     shop_id: str
     secret_key: str
     base_url: str = Field(default='https://api.yookassa.ru')
+    connection_timeout: float = 10.0
 
 
 settings = Settings()

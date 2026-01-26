@@ -40,7 +40,7 @@ async def notify_refund_handler(
             topic='refund',
             value=json.dumps({'refund_id': str(refund.id)}).encode()
         )
-
+        logger.info(f'sent notification about refund {refund.id} to the "refund" topic')
         async with db.postgres.session_maker() as session:
             await session.execute(
                 update(tables.RefundNotificationRequest)
@@ -48,17 +48,18 @@ async def notify_refund_handler(
                 .values({tables.RefundNotificationRequest.sent_to_topic: True})
             )
 
-    error_msg = None
-    try:
-        response = await handler_client.post(
-            url=notify_request.handler_url,
-            json={'refund_id': str(refund.id)},
-            timeout=settings.notification_timeout
-        )
-        if response.status_code != 200:
-            error_msg = f'got status {response.status_code} from "charged" handler "{notify_request.handler_url}"'
-    except httpx.ConnectError:
-        error_msg = f'couldn\'t connect to "charged" handler "{notify_request.handler_url}"'
+    if notify_request.handler_url:
+        error_msg = None
+        try:
+            response = await handler_client.post(
+                url=notify_request.handler_url,
+                json={'refund_id': str(refund.id)},
+                timeout=settings.notification_timeout
+            )
+            if response.status_code != 200:
+                error_msg = f'got status {response.status_code} from "charged" handler "{notify_request.handler_url}"'
+        except httpx.ConnectError:
+            error_msg = f'couldn\'t connect to "charged" handler "{notify_request.handler_url}"'
 
     if error_msg is not None:
         logger.warning(error_msg)
