@@ -2,7 +2,7 @@ import logging
 import httpx
 import asyncio
 from uuid import uuid4
-from sqlalchemy import select, update, insert, delete
+from sqlalchemy import select, update, insert
 
 import tables
 import db.postgres
@@ -65,10 +65,7 @@ async def refund_payment(
         return
 
     async with db.postgres.session_maker() as session, session.begin():
-        await session.execute(
-            delete(tables.RefundRequest)
-            .where(tables.RefundRequest.id == refund_request.id)
-        )
+        await session.delete(refund_request)
         await session.execute(
             update(tables.Refund)
             .where(tables.Refund.id == refund.id)

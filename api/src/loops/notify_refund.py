@@ -41,7 +41,7 @@ async def notify_refund_handler(
             value=json.dumps({'refund_id': str(refund.id)}).encode()
         )
         logger.info(f'sent notification about refund {refund.id} to the "refund" topic')
-        async with db.postgres.session_maker() as session:
+        async with db.postgres.session_maker() as session, session.begin():
             await session.execute(
                 update(tables.RefundNotificationRequest)
                 .where(tables.RefundNotificationRequest.id == notify_request.id)
@@ -65,6 +65,5 @@ async def notify_refund_handler(
             logger.warning(error_msg)
             return
 
-    async with db.postgres.session_maker() as session:
+    async with db.postgres.session_maker() as session, session.begin():
         await session.delete(notify_request)
-        await session.commit()

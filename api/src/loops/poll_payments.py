@@ -61,9 +61,11 @@ async def update_payment_status(yookassa_payment_data: dict[str, Any]):
     handler_url = metadata.get('handler_url', None)
 
     async with db.postgres.session_maker() as session, session.begin():
-        await session.execute(update(tables.Payment).values({
-            tables.Payment.status: status
-        }))
+        await session.execute(
+            update(tables.Payment)
+            .values({tables.Payment.status: status})
+            .where(tables.Payment.id == payment_id)
+        )
         # Здесь порядок не имеет значения, главное чтобы был коммит
         await session.execute(insert(tables.ChargeNotificationRequest).values({
             tables.ChargeNotificationRequest.id: uuid4(),

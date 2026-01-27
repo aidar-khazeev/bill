@@ -42,7 +42,7 @@ async def notify_charge_handler(
             value=json.dumps({'payment_id': str(payment.id)}).encode()
         )
         logger.info(f'sent notification about payment {payment.id} to the "charge" topic')
-        async with db.postgres.session_maker() as session:
+        async with db.postgres.session_maker() as session, session.begin():
             await session.execute(
                 update(tables.ChargeNotificationRequest)
                 .where(tables.ChargeNotificationRequest.id == charge_request.id)
@@ -66,11 +66,5 @@ async def notify_charge_handler(
             logger.warning(error_msg)
             return
 
-    async with db.postgres.session_maker() as session:
-        await session.execute(
-            update(tables.Payment)
-            .where(tables.Payment.id == payment.id)
-            .values({tables.Payment.status: 'succeeded'})
-        )
+    async with db.postgres.session_maker() as session, session.begin():
         await session.delete(charge_request)
-        await session.commit()
