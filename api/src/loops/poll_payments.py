@@ -1,6 +1,8 @@
 import logging
 import httpx
 import asyncio
+import aiokafka
+import json
 from typing import Any
 from uuid import uuid4
 from sqlalchemy import select, update
@@ -11,20 +13,23 @@ import db.postgres
 from settings import settings
 
 
-logger = logging.getLogger('payment-service-status-fetch-loop')
+logger = logging.getLogger('payment-service-payments-polling-loop')
 
 
 # У нас не используется веб-хук для оповещений от Yookassa, нет доменного имени
-async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
+async def payments_polling_loop(
+    yookassa_client: httpx.AsyncClient,
+    kafka_producer: aiokafka.AIOKafkaProducer
+):
     while True:
         await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
-            for payment in (await session.execute(
-                select(tables.Payment)
-                .where(tables.Payment.status == 'created')
-            )).scalars():
-                session.expunge(payment)
+            for payment_request, payment in (await session.execute(
+                select(tables.PaymentRequest, tables.Payment)
+                .join(tables.Payment, tables.PaymentRequest.payment_id == tables.Payment.id)
+            )).tuples():
+                session.expunge_all()
 
                 # https://yookassa.ru/developers/api#get_payments_list
                 response = await yookassa_client.get(
@@ -36,16 +41,16 @@ async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
                 if response_json['status'] == 'pending':
                     continue
 
-                await update_payment_status(yookassa_payment_data=response_json)
+                await update_payment_status(payment_request, payment, response_json, kafka_producer)
 
 
 # Использовался бы и при получении уведомлений через веб-хук
-async def update_payment_status(yookassa_payment_data: dict[str, Any]):
-    metadata = yookassa_payment_data['metadata']
-    if not metadata:  # Все оплаты созданные сервисом указывают metadata
-        logger.warning(f'yookassa payment {yookassa_payment_data['id']} has no metadata, ignoring')
-        return
-
+async def update_payment_status(
+    payment_request: tables.PaymentRequest,
+    payment: tables.Payment,
+    yookassa_payment_data: dict[str, Any],
+    kafka_producer: aiokafka.AIOKafkaProducer
+):
     status = yookassa_payment_data['status']
 
     # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#payment-statuses
@@ -56,17 +61,32 @@ async def update_payment_status(yookassa_payment_data: dict[str, Any]):
         logger.warning(f'yookassa payment {yookassa_payment_data['id']} has unknown status "{status}", ignoring')
         return
 
-    payment_id = metadata['payment_id']
-    handler_url = metadata.get('handler_url', None)
-
     async with db.postgres.session_maker() as session, session.begin():
         await session.execute(
             update(tables.Payment)
             .values({tables.Payment.status: status})
-            .where(tables.Payment.id == payment_id)
+            .where(tables.Payment.id == payment.id)
         )
-        await session.execute(insert(tables.ChargeNotificationRequest).values({
-            tables.ChargeNotificationRequest.id: uuid4(),
-            tables.ChargeNotificationRequest.payment_id: payment_id,
-            tables.ChargeNotificationRequest.handler_url: handler_url
-        }).on_conflict_do_nothing())
+
+    data = {
+        'id': str(payment.id),
+        'status': status
+    }
+
+    await kafka_producer.send_and_wait(
+        topic='payment',
+        value=json.dumps(data).encode()
+    )
+    logger.info(f'sent notification about payment {payment.id} to the "payment" topic')
+
+    async with db.postgres.session_maker() as session, session.begin():
+        await session.delete(payment_request)
+        await session.execute(
+            insert(tables.HandlerNotificationRequest)
+            .values({
+                tables.HandlerNotificationRequest.id: uuid4(),
+                tables.HandlerNotificationRequest.handler_url: payment_request.handler_url,
+                tables.HandlerNotificationRequest.data: data
+            })
+            .on_conflict_do_nothing()
+        )

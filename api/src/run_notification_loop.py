@@ -4,9 +4,8 @@ import logging
 import aiokafka
 
 from loops.refund import refund_loop
-from loops.poll_payments import payments_status_polling_loop
-from loops.notify_charge import charge_handlers_notification_loop
-from loops.notify_refund import refund_handlers_notification_loop
+from loops.poll_payments import payments_polling_loop
+from loops.notify_handlers import handlers_notification_loop
 from settings import yookassa_settings
 
 
@@ -23,10 +22,9 @@ async def run_loop():
 
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(refund_loop(yookassa_client))
-            tg.create_task(payments_status_polling_loop(yookassa_client))
-            tg.create_task(charge_handlers_notification_loop(handler_client, kafka_producer))
-            tg.create_task(refund_handlers_notification_loop(handler_client, kafka_producer))
+            tg.create_task(refund_loop(yookassa_client, kafka_producer))
+            tg.create_task(payments_polling_loop(yookassa_client, kafka_producer))
+            tg.create_task(handlers_notification_loop(handler_client))
     finally:
         await kafka_producer.stop()
 

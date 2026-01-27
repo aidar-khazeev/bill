@@ -1,8 +1,11 @@
 import logging
 import httpx
 import asyncio
+import json
+import aiokafka
 from uuid import uuid4
-from sqlalchemy import select, update, insert
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
 
 import tables
 import db.postgres
@@ -12,7 +15,7 @@ from settings import settings
 logger = logging.getLogger('payment-service-status-fetch-loop')
 
 
-async def refund_loop(yookassa_client: httpx.AsyncClient):
+async def refund_loop(yookassa_client: httpx.AsyncClient, kafka_producer: aiokafka.AIOKafkaProducer):
     while True:
         await asyncio.sleep(settings.refund_loop_sleep_duration)
 
@@ -23,12 +26,13 @@ async def refund_loop(yookassa_client: httpx.AsyncClient):
                 .join(tables.Payment, tables.Refund.payment_id == tables.Payment.id)
             )).tuples():
                 session.expunge_all()
-                await refund_payment(refund_request, refund, payment, yookassa_client)
+                await refund_payment(refund_request, refund, kafka_producer, payment, yookassa_client)
 
 
 async def refund_payment(
     refund_request: tables.RefundRequest,
     refund: tables.Refund,
+    kafka_producer: aiokafka.AIOKafkaProducer,
     payment: tables.Payment,
     yookassa_client: httpx.AsyncClient
 ):
@@ -65,7 +69,6 @@ async def refund_payment(
         return
 
     async with db.postgres.session_maker() as session, session.begin():
-        await session.delete(refund_request)
         await session.execute(
             update(tables.Refund)
             .where(tables.Refund.id == refund.id)
@@ -75,11 +78,27 @@ async def refund_payment(
                 tables.Refund.external_cancellation_reason: cancellation_reason
             })
         )
+
+    data = {
+        'id': str(refund.id),
+        'status': status,
+        'external_cancellation_reason': cancellation_reason
+    }
+
+    await kafka_producer.send_and_wait(
+        topic='refund',
+        value=json.dumps(data).encode()
+    )
+    logger.info(f'sent notification about refund {refund.id} to the "refund" topic')
+
+    async with db.postgres.session_maker() as session, session.begin():
+        await session.delete(refund_request)
         await session.execute(
-            insert(tables.RefundNotificationRequest)
+            insert(tables.HandlerNotificationRequest)
             .values({
-                tables.RefundNotificationRequest.id: uuid4(),
-                tables.RefundNotificationRequest.refund_id: refund.id,
-                tables.RefundNotificationRequest.handler_url: refund_request.handler_url
+                tables.HandlerNotificationRequest.id: uuid4(),
+                tables.HandlerNotificationRequest.handler_url: refund_request.handler_url,
+                tables.HandlerNotificationRequest.data: data
             })
+            .on_conflict_do_nothing()
         )

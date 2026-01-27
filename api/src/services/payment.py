@@ -58,11 +58,7 @@ class PaymentService:
                         'return_url': str(return_url)
                     },
                     # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#capture-and-cancel
-                    'capture': True,
-                    'metadata': {
-                        'payment_id': str(payment_id),
-                        'handler_url': handler_url
-                    }
+                    'capture': True
                 }
             )
         except httpx.ConnectError as e:
@@ -89,6 +85,12 @@ class PaymentService:
                 tables.Payment.amount: amount,
                 tables.Payment.currency: currency,
                 tables.Payment.status: 'created'
+            }))
+
+            await session.execute(insert(tables.PaymentRequest).values({
+                tables.PaymentRequest.id: uuid4(),
+                tables.PaymentRequest.payment_id: payment_id,
+                tables.PaymentRequest.handler_url: handler_url
             }))
 
         return ChargeInfo(
