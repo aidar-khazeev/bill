@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Any
 from uuid import UUID
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, Path
@@ -19,6 +19,7 @@ class ChargeBody(BaseModel):
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
     )
     return_url: HttpUrl
+    extra_data: dict[str, Any] | None = None
 
 
 @router.post(
@@ -37,7 +38,8 @@ async def create_payment(
         handler_url=str(body.handler_url) if body.handler_url else None,
         return_url=str(body.return_url),
         amount=body.amount,
-        currency=body.currency
+        currency=body.currency,
+        extra_data=body.extra_data
     )
 
 
@@ -48,6 +50,7 @@ class RefundBody(BaseModel):
         'Клиенту необходимо указать URL, по которому он будет уведомлен о совершении возврата<br>'
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
     )
+    extra_data: dict[str, Any] | None = None
 
 
 @router.post(
@@ -63,5 +66,6 @@ async def create_refund(
         payment_id=payment_id,
         handler_url=str(body.handler_url) if body.handler_url else None,
         amount=body.amount,
-        currency=body.currency
+        currency=body.currency,
+        extra_data=body.extra_data
     )

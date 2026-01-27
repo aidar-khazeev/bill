@@ -70,7 +70,8 @@ async def update_payment_status(
 
     data = {
         'id': str(payment.id),
-        'status': status
+        'status': status,
+        'extra_data': payment_request.extra_data
     }
 
     await kafka_producer.send_and_wait(

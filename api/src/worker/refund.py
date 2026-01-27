@@ -82,7 +82,8 @@ async def refund_payment(
     data = {
         'id': str(refund.id),
         'status': status,
-        'external_cancellation_reason': cancellation_reason
+        'external_cancellation_reason': cancellation_reason,
+        'extra_data': refund_request.extra_data
     }
 
     await kafka_producer.send_and_wait(

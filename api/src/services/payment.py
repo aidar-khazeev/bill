@@ -1,5 +1,6 @@
 import httpx
 import logging
+from typing import Any
 from functools import lru_cache
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -39,7 +40,8 @@ class PaymentService:
         handler_url: str | None,
         return_url: str,
         amount: Decimal,
-        currency: str
+        currency: str,
+        extra_data: dict[str, Any] | None
     ):
         payment_id = uuid4()
 
@@ -90,7 +92,8 @@ class PaymentService:
             await session.execute(insert(tables.PaymentRequest).values({
                 tables.PaymentRequest.id: uuid4(),
                 tables.PaymentRequest.payment_id: payment_id,
-                tables.PaymentRequest.handler_url: handler_url
+                tables.PaymentRequest.handler_url: handler_url,
+                tables.PaymentRequest.extra_data: extra_data
             }))
 
         return ChargeInfo(
@@ -103,7 +106,8 @@ class PaymentService:
         payment_id: UUID,
         handler_url: str | None,
         amount: Decimal,
-        currency: str
+        currency: str,
+        extra_data: dict[str, Any] | None
     ):
         # Мы могли бы сразу отправить post запрос на yookassa, и ответ вернуть клиенту
         # Но у yookassa после выполнения refund на своей стороне могут возникнуть проблемы при возврате ответа
@@ -127,7 +131,8 @@ class PaymentService:
             await session.execute(insert(tables.RefundRequest).values({
                 tables.RefundRequest.id: uuid4(),
                 tables.RefundRequest.refund_id: refund_id,
-                tables.RefundRequest.handler_url: handler_url
+                tables.RefundRequest.handler_url: handler_url,
+                tables.RefundRequest.extra_data: extra_data
             }))
 
 
