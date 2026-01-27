@@ -105,7 +105,6 @@ class PaymentService:
     ):
         # Мы могли бы сразу отправить post запрос на yookassa, и ответ вернуть клиенту
         # Но у yookassa после выполнения refund на своей стороне могут возникнуть проблемы при возврате ответа
-        # Поэтому откладываем этот запрос в лупу
         async with db.postgres.session_maker() as session, session.begin():
             payment = await session.get(tables.Payment, payment_id)
             if payment is None:

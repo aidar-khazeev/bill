@@ -14,6 +14,7 @@ from settings import settings
 logger = logging.getLogger('payment-service-status-fetch-loop')
 
 
+# У нас не используется веб-хук для оповещений от Yookassa, нет доменного имени
 async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
     while True:
         await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
@@ -38,10 +39,8 @@ async def payments_status_polling_loop(yookassa_client: httpx.AsyncClient):
                 await update_payment_status(yookassa_payment_data=response_json)
 
 
+# Использовался бы и при получении уведомлений через веб-хук
 async def update_payment_status(yookassa_payment_data: dict[str, Any]):
-    # У нас не используется веб-хук для оповещений от Yookassa, нет доменного имени
-    # Если бы использовался, то все запросы отправлялись бы тоже сюда
-
     metadata = yookassa_payment_data['metadata']
     if not metadata:  # Все оплаты созданные сервисом указывают metadata
         logger.warning(f'yookassa payment {yookassa_payment_data['id']} has no metadata, ignoring')
@@ -66,7 +65,6 @@ async def update_payment_status(yookassa_payment_data: dict[str, Any]):
             .values({tables.Payment.status: status})
             .where(tables.Payment.id == payment_id)
         )
-        # Здесь порядок не имеет значения, главное чтобы был коммит
         await session.execute(insert(tables.ChargeNotificationRequest).values({
             tables.ChargeNotificationRequest.id: uuid4(),
             tables.ChargeNotificationRequest.payment_id: payment_id,

@@ -23,7 +23,7 @@ app = FastAPI(
 )
 
 
-app.include_router(api.v1.payment.router, prefix='/api/v1/pay', tags=['Payment'])
+app.include_router(api.v1.payment.router, prefix='/api/v1/payment', tags=['Payment'])
 
 
 @app.exception_handler(services.payment.PaymentDoesntExistError)

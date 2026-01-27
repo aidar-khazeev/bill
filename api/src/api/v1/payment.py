@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 from decimal import Decimal
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Path
 from pydantic import BaseModel, Field, HttpUrl
 
 from services.payment import PaymentService, ChargeInfo, get_payment_service
@@ -22,13 +22,13 @@ class ChargeBody(BaseModel):
 
 
 @router.post(
-    path='/charge',
+    path='',
     description=
     'Создает платеж (payment) посредством внешнего сервиса<br>'
     'Пользователю необходимо перейти по предоставленной ссылке на внешний сервис, и произвести платеж<br>'
     'Если платеж не будет совершен (за некоторый промежуток времени), он будет автоматически отменен'
 )
-async def charge(
+async def create_payment(
     body: Annotated[ChargeBody, Body()],
     payments_service: Annotated[PaymentService, Depends(get_payment_service)]
 ) -> ChargeInfo:
@@ -42,7 +42,6 @@ async def charge(
 
 
 class RefundBody(BaseModel):
-    payment_id: UUID
     amount: Decimal = Field(gt=0.0)
     currency: Literal['RUB'] = Field(default='RUB')
     handler_url: HttpUrl | None = Field(description=
@@ -52,15 +51,16 @@ class RefundBody(BaseModel):
 
 
 @router.post(
-    path='/refund',
+    path='/{payment_id}/refund',
     description='Создает запрос на совершение возврата<br>'
 )
-async def refund(
+async def create_refund(
+    payment_id: Annotated[UUID, Path()],
     body: Annotated[RefundBody, Body()],
     payments_service: Annotated[PaymentService, Depends(get_payment_service)]
 ) -> None:
     await payments_service.refund(
-        payment_id=body.payment_id,
+        payment_id=payment_id,
         handler_url=str(body.handler_url) if body.handler_url else None,
         amount=body.amount,
         currency=body.currency
