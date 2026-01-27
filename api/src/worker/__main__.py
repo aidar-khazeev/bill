@@ -3,9 +3,9 @@ import httpx
 import logging
 import aiokafka
 
-from loops.refund import refund_loop
-from loops.poll_payments import payments_polling_loop
-from loops.notify_handlers import handlers_notification_loop
+from .refund import refund_loop
+from .poll_payments import payments_polling_loop
+from .notify_handlers import handlers_notification_loop
 from settings import yookassa_settings
 
 
