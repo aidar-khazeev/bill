@@ -22,12 +22,11 @@ async def run_loop():
     await kafka_producer.start()
 
     try:
-        await asyncio.gather(
-            refund_loop(yookassa_client),
-            payments_status_polling_loop(yookassa_client),
-            charge_handlers_notification_loop(handler_client, kafka_producer),
-            refund_handlers_notification_loop(handler_client, kafka_producer)
-        )
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(refund_loop(yookassa_client))
+            tg.create_task(payments_status_polling_loop(yookassa_client))
+            tg.create_task(charge_handlers_notification_loop(handler_client, kafka_producer))
+            tg.create_task(refund_handlers_notification_loop(handler_client, kafka_producer))
     finally:
         await kafka_producer.stop()
 
