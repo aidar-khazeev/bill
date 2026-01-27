@@ -45,15 +45,38 @@ async def refund_payment(
         }
     )
 
-    assert response.status_code == 200, response.text  # TODO
     response_json = response.json()
-    assert response_json['status'] == 'succeeded', response_json['status']
+
+    if response.status_code == 200:
+        status = response_json['status']
+        cancellation_details = response_json.get('cancellation_details')
+        cancellation_reason = cancellation_details['reason'] if cancellation_details else None
+    elif response.status_code == 400:
+        status = 'cancelled'
+        cancellation_reason = response_json['description']
+    else:
+        logger.warning(f'unexpected http status from "refund": {response.status_code}, ignoring')
+        return
+
+    # https://yookassa.ru/developers/api#refund_object_status
+    # Не должно быть других статусов, проверяем на всякий случай
+    if status not in ('succeeded', 'cancelled'):
+        logger.warning(f'yookassa refund {response_json['id']} has unknown status "{status}", ignoring')
+        return
 
     async with db.postgres.session_maker() as session, session.begin():
         await session.execute(
+            delete(tables.RefundRequest)
+            .where(tables.RefundRequest.id == refund_request.id)
+        )
+        await session.execute(
             update(tables.Refund)
             .where(tables.Refund.id == refund.id)
-            .values({tables.Refund.external_id: response_json['id']})
+            .values({
+                tables.Refund.external_id: response_json['id'],
+                tables.Refund.status: status,
+                tables.Refund.external_cancellation_reason: cancellation_reason
+            })
         )
         await session.execute(
             insert(tables.RefundNotificationRequest)
@@ -62,8 +85,4 @@ async def refund_payment(
                 tables.RefundNotificationRequest.refund_id: refund.id,
                 tables.RefundNotificationRequest.handler_url: refund_request.handler_url
             })
-        )
-        await session.execute(
-            delete(tables.RefundRequest)
-            .where(tables.RefundRequest.id == refund_request.id)
         )

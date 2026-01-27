@@ -61,9 +61,9 @@ async def notify_refund_handler(
         except httpx.ConnectError:
             error_msg = f'couldn\'t connect to "charged" handler "{notify_request.handler_url}"'
 
-    if error_msg is not None:
-        logger.warning(error_msg)
-        return
+        if error_msg is not None:
+            logger.warning(error_msg)
+            return
 
     async with db.postgres.session_maker() as session:
         await session.delete(notify_request)
