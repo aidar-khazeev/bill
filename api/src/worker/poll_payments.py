@@ -88,12 +88,14 @@ async def update_payment_status(
 
     async with db.postgres.session_maker() as session, session.begin():
         await session.delete(payment_request)
-        await session.execute(
-            insert(tables.HandlerNotificationRequest)
-            .values({
-                tables.HandlerNotificationRequest.id: uuid4(),
-                tables.HandlerNotificationRequest.handler_url: payment_request.handler_url,
-                tables.HandlerNotificationRequest.data: data
-            })
-            .on_conflict_do_nothing()
-        )
+
+        if payment_request.handler_url:
+            await session.execute(
+                insert(tables.HandlerNotificationRequest)
+                .values({
+                    tables.HandlerNotificationRequest.id: uuid4(),
+                    tables.HandlerNotificationRequest.handler_url: payment_request.handler_url,
+                    tables.HandlerNotificationRequest.data: data
+                })
+                .on_conflict_do_nothing()
+            )

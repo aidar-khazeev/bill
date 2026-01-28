@@ -14,7 +14,7 @@ class PaymentBody(BaseModel):
     user_id: UUID
     amount: Decimal = Field(gt=0.0)
     currency: Literal['RUB'] = Field(default='RUB')
-    handler_url: HttpUrl | None = Field(description=
+    handler_url: HttpUrl | None = Field(default=None, description=
         'Клиенту необходимо указать URL, по которому он будет уведомлен о совершении платежа<br>'
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
     )
@@ -46,7 +46,7 @@ async def create_payment(
 class RefundBody(BaseModel):
     amount: Decimal = Field(gt=0.0)
     currency: Literal['RUB'] = Field(default='RUB')
-    handler_url: HttpUrl | None = Field(description=
+    handler_url: HttpUrl | None = Field(default=None, description=
         'Клиенту необходимо указать URL, по которому он будет уведомлен о совершении возврата<br>'
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
     )

@@ -1,3 +1,4 @@
+import logging
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -14,6 +15,8 @@ if config.config_file_name is not None:
 target_metadata = tables.Base.metadata
 
 config.set_main_option('sqlalchemy.url', pg_settings.get_url(driver='psycopg'))
+if config.get_main_option('shut_alembic_logger', 'false') == 'true':
+    logging.getLogger('alembic').setLevel(logging.WARNING)
 
 
 def run_migrations_offline() -> None:
