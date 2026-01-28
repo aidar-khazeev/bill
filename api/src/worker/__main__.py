@@ -13,7 +13,7 @@ async def run_loop():
     yookassa_client = yookassa_client=httpx.AsyncClient(
         base_url=yookassa_settings.base_url,
         auth=httpx.BasicAuth(yookassa_settings.shop_id, yookassa_settings.secret_key),
-        timeout=yookassa_settings.connection_timeout
+        timeout=yookassa_settings.connection_timeout_sec
     )
     handler_client = httpx.AsyncClient()
 

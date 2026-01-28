@@ -10,7 +10,7 @@ from services.payment import PaymentService, ChargeInfo, get_payment_service
 router = APIRouter()
 
 
-class ChargeBody(BaseModel):
+class PaymentBody(BaseModel):
     user_id: UUID
     amount: Decimal = Field(gt=0.0)
     currency: Literal['RUB'] = Field(default='RUB')
@@ -30,7 +30,7 @@ class ChargeBody(BaseModel):
     'Если платеж не будет совершен (за некоторый промежуток времени), он будет автоматически отменен'
 )
 async def create_payment(
-    body: Annotated[ChargeBody, Body()],
+    body: Annotated[PaymentBody, Body()],
     payments_service: Annotated[PaymentService, Depends(get_payment_service)]
 ) -> ChargeInfo:
     return await payments_service.charge(

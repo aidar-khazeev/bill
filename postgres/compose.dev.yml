@@ -8,9 +8,9 @@ services:
       - 5436:5432
 
     environment:
-      POSTGRES_USER: ${BILL_POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${BILL_POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${BILL_POSTGRES_DB:-bill}
+      POSTGRES_USER: ${BILL_POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${BILL_POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${BILL_POSTGRES_DB:?}
 
     healthcheck:
       test: pg_isready -U $${POSTGRES_USER}

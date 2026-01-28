@@ -24,3 +24,5 @@ services:
         condition: service_healthy
       bill-kafka-0:
         condition: service_healthy
+
+    ports: [ 18006:8000 ]

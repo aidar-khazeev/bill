@@ -15,7 +15,7 @@ async def handlers_notification_loop(
     handler_client: httpx.AsyncClient
 ):
     while True:
-        await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
+        await asyncio.sleep(settings.handlers_notification_loop_sleep_duration)
 
         async with db.postgres.session_maker() as session:
             for notification_request in (await session.execute(
