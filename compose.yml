@@ -1,3 +1,5 @@
 include:
   - ./postgres/compose.yml
   - ./kafka/compose.yml
+  - ./nginx/compose.yml
+  - ./api/compose.yml

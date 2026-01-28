@@ -30,6 +30,8 @@ class PostgresSettings(BaseSettings):
 class KafkaSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_kafka_')
 
+    bootstrap_servers: str = Field(default='localhost:19092')
+
 
 class YookassaSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_yookassa_')
@@ -42,4 +44,5 @@ class YookassaSettings(BaseSettings):
 
 settings = Settings()
 pg_settings = PostgresSettings()
+kafka_settings = KafkaSettings()
 yookassa_settings = YookassaSettings()  # type: ignore

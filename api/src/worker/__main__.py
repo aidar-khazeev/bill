@@ -6,7 +6,7 @@ import aiokafka
 from .refund import refund_loop
 from .poll_payments import payments_polling_loop
 from .notify_handlers import handlers_notification_loop
-from settings import yookassa_settings
+from settings import yookassa_settings, kafka_settings
 
 
 async def run_loop():
@@ -17,7 +17,7 @@ async def run_loop():
     )
     handler_client = httpx.AsyncClient()
 
-    kafka_producer = aiokafka.AIOKafkaProducer(bootstrap_servers='localhost:19092')
+    kafka_producer = aiokafka.AIOKafkaProducer(bootstrap_servers=kafka_settings.bootstrap_servers)
     await kafka_producer.start()
 
     try:
