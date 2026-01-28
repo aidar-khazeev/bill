@@ -34,8 +34,8 @@ class KafkaSettings(BaseSettings):
 class YookassaSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='allow', env_prefix='bill_yookassa_')
 
-    shop_id: str
-    secret_key: str
+    shop_id: str = Field(default='1245745')  # Задано для удобства, в реальном проекте такого не допускать!
+    secret_key: str = Field(default='test_EYVo1Qh3f5Yg2VJk-x6KNPBrF2AIokmz6-WcNOK84Do')
     base_url: str = Field(default='https://api.yookassa.ru')
     connection_timeout: float = 30.0
 
