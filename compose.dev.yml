@@ -1,3 +1,3 @@
 include:
-  - ./postgres/compose.yml
+  - ./postgres/compose.dev.yml
   - ./kafka/compose.dev.yml

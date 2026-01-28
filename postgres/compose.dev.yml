@@ -4,6 +4,9 @@ services:
 
     image: postgres:18.1-trixie
 
+    ports:
+      - 5436:5432
+
     environment:
       POSTGRES_USER: ${BILL_POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${BILL_POSTGRES_PASSWORD:-postgres}
