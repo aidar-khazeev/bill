@@ -14,7 +14,7 @@ RUN uv sync --locked --no-cache --no-dev
 
 COPY alembic.ini ./
 COPY ./src .
-COPY ./alembic ./alembic
+COPY ./migrations ./migrations
 
 RUN useradd fastapi
 
