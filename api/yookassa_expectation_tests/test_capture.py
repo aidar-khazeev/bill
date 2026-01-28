@@ -3,7 +3,11 @@ from helpers import create_payment, get_payment, capture_payment
 
 
 def test_capture(yookassa_client: httpx.Client):
-    response = create_payment(yookassa_client, roubles=100.00, auto_capture=False)
+    response = create_payment(
+        yookassa_client,
+        roubles=100.00,
+        auto_capture=False  # В 2 шага, после оплаты нужно вызвать capture
+    )
     assert response.status_code == 200, response.text
     response_json = response.json()
     assert response_json['status'] == 'waiting_for_capture', response.text
@@ -15,7 +19,7 @@ def test_capture(yookassa_client: httpx.Client):
     assert response_json['status'] == 'waiting_for_capture', response.text
     assert response_json['amount'] == {'value': '100.00', 'currency': 'RUB'}, response.text
 
-    response = capture_payment(yookassa_client, response_json['id'], 100.00)
+    response = capture_payment(yookassa_client, response_json['id'], roubles=100.00)
     assert response.status_code == 200, response.text
     response_json = response.json()
     assert response_json['status'] == 'succeeded', response.text

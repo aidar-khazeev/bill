@@ -62,9 +62,15 @@ async def update_payment_status(
         return
 
     async with db.postgres.session_maker() as session, session.begin():
+        cancellation_details = yookassa_payment_data.get('cancellation_details')
+        cancellation_reason = cancellation_details['reason'] if cancellation_details else None
+
         await session.execute(
             update(tables.Payment)
-            .values({tables.Payment.status: status})
+            .values({
+                tables.Payment.status: status,
+                tables.Payment.external_cancellation_reason: cancellation_reason
+            })
             .where(tables.Payment.id == payment.id)
         )
 

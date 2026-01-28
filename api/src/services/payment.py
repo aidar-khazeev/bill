@@ -83,10 +83,11 @@ class PaymentService:
                 tables.Payment.id: payment_id,
                 tables.Payment.external_id: response_json['id'],
                 tables.Payment.user_id: user_id,
+                tables.Payment.status: 'created',
+                tables.Payment.external_cancellation_reason: None,
                 tables.Payment.created_at: datetime.now(),
                 tables.Payment.amount: amount,
                 tables.Payment.currency: currency,
-                tables.Payment.status: 'created'
             }))
 
             await session.execute(insert(tables.PaymentRequest).values({
@@ -124,6 +125,7 @@ class PaymentService:
                 tables.Refund.payment_id: payment_id,
                 tables.Refund.created_at: datetime.now(),
                 tables.Refund.status: 'created',
+                tables.Refund.external_cancellation_reason: None,
                 tables.Refund.amount: amount,
                 tables.Refund.currency: currency
             }))
