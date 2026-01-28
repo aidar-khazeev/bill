@@ -15,8 +15,8 @@ from main import app
 
 @pytest.fixture(autouse=True)
 async def run_worker(run_migrations):
-    from worker import run_loop
-    worker_task = asyncio.create_task(run_loop())
+    from worker import run
+    worker_task = asyncio.create_task(run())
 
     yield
 

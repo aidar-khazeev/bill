@@ -8,7 +8,7 @@ import db.postgres
 from settings import settings
 
 
-logger = logging.getLogger('payment-service-handlers-notification-loop')
+logger = logging.getLogger('bill-worker-handlers-notification-loop')
 
 
 async def handlers_notification_loop(

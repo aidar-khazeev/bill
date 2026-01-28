@@ -1,17 +1,11 @@
 services:
 
   bill-postgres:
-
     image: postgres:18.1-trixie
-
-    ports:
-      - 5436:5432
-
     environment:
       POSTGRES_USER: ${BILL_POSTGRES_USER:?}
       POSTGRES_PASSWORD: ${BILL_POSTGRES_PASSWORD:?}
       POSTGRES_DB: ${BILL_POSTGRES_DB:?}
-
     healthcheck:
       test: pg_isready -U $${POSTGRES_USER}
       start_interval: 1s
@@ -19,3 +13,5 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    ports:
+      - 5436:5432

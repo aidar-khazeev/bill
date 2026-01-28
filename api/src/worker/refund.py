@@ -12,7 +12,7 @@ import db.postgres
 from settings import settings
 
 
-logger = logging.getLogger('payment-service-status-fetch-loop')
+logger = logging.getLogger('bill-worker-status-fetch-loop')
 
 
 async def refund_loop(yookassa_client: httpx.AsyncClient, kafka_producer: aiokafka.AIOKafkaProducer):

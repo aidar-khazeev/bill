@@ -2,4 +2,4 @@ include:
   - ./postgres/compose.dev.yml
   - ./kafka/compose.dev.yml
   - ./nginx/compose.dev.yml
-  - ./api/compose.yml
+  - ./api/compose.dev.yml

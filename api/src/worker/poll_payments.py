@@ -13,7 +13,7 @@ import db.postgres
 from settings import settings
 
 
-logger = logging.getLogger('payment-service-payments-polling-loop')
+logger = logging.getLogger('bill-worker-payments-polling-loop')
 
 
 # У нас не используется веб-хук для оповещений от Yookassa, нет доменного имени

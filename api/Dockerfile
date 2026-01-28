@@ -22,10 +22,8 @@ USER fastapi
 
 EXPOSE 8000
 
-CMD .venv/bin/alembic upgrade head && ( \
+CMD .venv/bin/alembic upgrade head && \
         .venv/bin/gunicorn main:app \
         --workers 4 \
         --worker-class uvicorn.workers.UvicornWorker \
-        --bind 0.0.0.0:8000 & \
-        .venv/bin/python -m worker \
-    )
+        --bind 0.0.0.0:8000
