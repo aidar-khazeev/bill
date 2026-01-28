@@ -27,7 +27,7 @@ services:
       filebeat_enable: "true"
       service: "bill-kafka-0"
 
-  kafka-ui:
+  bill-kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:v1.3.0
     ports: [ 8080:8080 ]
     environment:
