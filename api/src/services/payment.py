@@ -77,6 +77,7 @@ class PaymentService:
         # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#user-confirmation
 
         response_json = response.json()
+        now = datetime.now()
 
         async with db.postgres.session_maker() as session, session.begin():
             await session.execute(insert(tables.Payment).values({
@@ -85,13 +86,14 @@ class PaymentService:
                 tables.Payment.user_id: user_id,
                 tables.Payment.status: 'created',
                 tables.Payment.external_cancellation_reason: None,
-                tables.Payment.created_at: datetime.now(),
+                tables.Payment.created_at: now,
                 tables.Payment.amount: amount,
                 tables.Payment.currency: currency,
             }))
 
             await session.execute(insert(tables.PaymentRequest).values({
                 tables.PaymentRequest.id: uuid4(),
+                tables.PaymentRequest.created_at: now,
                 tables.PaymentRequest.payment_id: payment_id,
                 tables.PaymentRequest.handler_url: handler_url,
                 tables.PaymentRequest.extra_data: extra_data
@@ -118,12 +120,13 @@ class PaymentService:
                 raise PaymentDoesntExistError()
 
             refund_id = uuid4()
+            now = datetime.now()
 
             await session.execute(insert(tables.Refund).values({
                 tables.Refund.id: refund_id,
                 tables.Refund.external_id: None,
                 tables.Refund.payment_id: payment_id,
-                tables.Refund.created_at: datetime.now(),
+                tables.Refund.created_at: now,
                 tables.Refund.status: 'created',
                 tables.Refund.external_cancellation_reason: None,
                 tables.Refund.amount: amount,
@@ -132,6 +135,7 @@ class PaymentService:
 
             await session.execute(insert(tables.RefundRequest).values({
                 tables.RefundRequest.id: uuid4(),
+                tables.RefundRequest.created_at: now,
                 tables.RefundRequest.refund_id: refund_id,
                 tables.RefundRequest.handler_url: handler_url,
                 tables.RefundRequest.extra_data: extra_data

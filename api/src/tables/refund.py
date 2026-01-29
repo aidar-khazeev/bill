@@ -15,7 +15,7 @@ class Refund(Base):
     __tablename__ = 'refund'
 
     id: Mapped[UUID] = mapped_column(primary_key=True, index=True)
-    payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'), unique=True)
+    payment_id: Mapped[UUID] = mapped_column(ForeignKey(Payment.id, ondelete='RESTRICT'))
     external_id: Mapped[str | None] = mapped_column(index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column()
     status: Mapped[Status] = mapped_column()

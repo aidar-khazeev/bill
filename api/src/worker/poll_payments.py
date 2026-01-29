@@ -3,9 +3,9 @@ import httpx
 import asyncio
 import aiokafka
 import json
-from typing import Any
 from uuid import uuid4
-from sqlalchemy import select, update
+from datetime import datetime
+from sqlalchemy import select, update, nulls_last
 from sqlalchemy.dialects.postgresql import insert
 
 import tables
@@ -22,35 +22,53 @@ async def payments_polling_loop(
     kafka_producer: aiokafka.AIOKafkaProducer
 ):
     while True:
-        await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
-
         async with db.postgres.session_maker() as session:
-            for payment_request, payment in (await session.execute(
-                select(tables.PaymentRequest, tables.Payment)
-                .join(tables.Payment, tables.PaymentRequest.payment_id == tables.Payment.id)
-            )).tuples():
-                session.expunge_all()
+            request = await session.scalar(
+                select(tables.PaymentRequest)
+                .order_by(nulls_last(tables.PaymentRequest.processed_at.asc()))
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
 
-                # https://yookassa.ru/developers/api#get_payments_list
-                response = await yookassa_client.get(
-                    url=f'/v3/payments/{payment.external_id}',
-                )
-                assert response.status_code == 200, response.text
-                response_json = response.json()
+            if request:
+                session.expunge(request)
+                if await update_payment_status(request, yookassa_client, kafka_producer):
+                    await session.delete(request)
+                else:
+                    await session.execute(
+                        update(tables.PaymentRequest)
+                        .where(tables.PaymentRequest.id == request.id)
+                        .values({tables.PaymentRequest.processed_at: datetime.now()})
+                    )
 
-                if response_json['status'] == 'pending':
-                    continue
+                await session.commit()
+                continue
 
-                await update_payment_status(payment_request, payment, response_json, kafka_producer)
+        await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
 
 
 # Использовался бы и при получении уведомлений через веб-хук
 async def update_payment_status(
     payment_request: tables.PaymentRequest,
-    payment: tables.Payment,
-    yookassa_payment_data: dict[str, Any],
+    yookassa_client: httpx.AsyncClient,
     kafka_producer: aiokafka.AIOKafkaProducer
-):
+) -> bool:
+    async with db.postgres.session_maker() as session:
+        payment = (await session.execute(
+            select(tables.Payment)
+            .where(tables.Payment.id == payment_request.payment_id)
+        )).scalar_one()
+
+    # https://yookassa.ru/developers/api#get_payments_list
+    response = await yookassa_client.get(
+        url=f'/v3/payments/{payment.external_id}',
+    )
+    assert response.status_code == 200, response.text
+    yookassa_payment_data = response.json()
+
+    if yookassa_payment_data['status'] == 'pending':
+        return False
+
     status = yookassa_payment_data['status']
 
     # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#payment-statuses
@@ -59,7 +77,7 @@ async def update_payment_status(
     # 'waiting_for_capture' быть не может, так как не используем подтверждение оплаты
     if status not in ('succeeded', 'cancelled'):
         logger.warning(f'yookassa payment {yookassa_payment_data['id']} has unknown status "{status}", ignoring')
-        return
+        return False
 
     async with db.postgres.session_maker() as session, session.begin():
         cancellation_details = yookassa_payment_data.get('cancellation_details')
@@ -86,16 +104,17 @@ async def update_payment_status(
     )
     logger.info(f'sent notification about payment {payment.id} to the "payment" topic')
 
-    async with db.postgres.session_maker() as session, session.begin():
-        await session.delete(payment_request)
-
-        if payment_request.handler_url:
+    if payment_request.handler_url:
+        async with db.postgres.session_maker() as session, session.begin():
             await session.execute(
                 insert(tables.HandlerNotificationRequest)
                 .values({
                     tables.HandlerNotificationRequest.id: uuid4(),
+                    tables.HandlerNotificationRequest.created_at: datetime.now(),
                     tables.HandlerNotificationRequest.handler_url: payment_request.handler_url,
                     tables.HandlerNotificationRequest.data: data
                 })
                 .on_conflict_do_nothing()
             )
+
+    return True

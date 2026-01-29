@@ -4,7 +4,8 @@ import asyncio
 import json
 import aiokafka
 from uuid import uuid4
-from sqlalchemy import select, update
+from datetime import datetime
+from sqlalchemy import select, update, nulls_last
 from sqlalchemy.dialects.postgresql import insert
 
 import tables
@@ -12,30 +13,51 @@ import db.postgres
 from settings import settings
 
 
-logger = logging.getLogger('bill-worker-status-fetch-loop')
+logger = logging.getLogger('bill-worker-refund-loop')
 
 
 async def refund_loop(yookassa_client: httpx.AsyncClient, kafka_producer: aiokafka.AIOKafkaProducer):
     while True:
-        await asyncio.sleep(settings.refund_loop_sleep_duration)
-
         async with db.postgres.session_maker() as session:
-            for refund_request, refund, payment in (await session.execute(
-                select(tables.RefundRequest, tables.Refund, tables.Payment)
-                .join(tables.Refund, tables.RefundRequest.refund_id == tables.Refund.id)
-                .join(tables.Payment, tables.Refund.payment_id == tables.Payment.id)
-            )).tuples():
-                session.expunge_all()
-                await refund_payment(refund_request, refund, kafka_producer, payment, yookassa_client)
+            request = await session.scalar(
+                select(tables.RefundRequest)
+                .order_by(nulls_last(tables.RefundRequest.processed_at.asc()))
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+
+            if request:
+                session.expunge(request)
+                if await refund_payment(request, kafka_producer, yookassa_client):
+                    await session.delete(request)
+                else:
+                    await session.execute(
+                        update(tables.RefundRequest)
+                        .where(tables.RefundRequest.id == request.id)
+                        .values({tables.RefundRequest.processed_at: datetime.now()})
+                    )
+
+                await session.commit()
+                continue
+
+        await asyncio.sleep(settings.refund_loop_sleep_duration)
 
 
 async def refund_payment(
     refund_request: tables.RefundRequest,
-    refund: tables.Refund,
     kafka_producer: aiokafka.AIOKafkaProducer,
-    payment: tables.Payment,
     yookassa_client: httpx.AsyncClient
-):
+) -> bool:
+    async with db.postgres.session_maker() as session:
+        refund = (await session.execute(
+            select(tables.Refund)
+            .where(tables.Refund.id == refund_request.refund_id)
+        )).scalar_one()
+        payment = (await session.execute(
+            select(tables.Payment)
+            .where(tables.Payment.id == refund.payment_id)
+        )).scalar_one()
+
     # https://yookassa.ru/developers/api#create_refund
     response = await yookassa_client.post(
         url='/v3/refunds',
@@ -60,13 +82,13 @@ async def refund_payment(
         cancellation_reason = response_json['description']
     else:
         logger.warning(f'unexpected http status from "refund": {response.status_code}, ignoring')
-        return
+        return False
 
     # https://yookassa.ru/developers/api#refund_object_status
     # Не должно быть других статусов, проверяем на всякий случай
     if status not in ('succeeded', 'cancelled'):
         logger.warning(f'yookassa refund {response_json['id']} has unknown status "{status}", ignoring')
-        return
+        return False
 
     async with db.postgres.session_maker() as session, session.begin():
         await session.execute(
@@ -92,16 +114,17 @@ async def refund_payment(
     )
     logger.info(f'sent notification about refund {refund.id} to the "refund" topic')
 
-    async with db.postgres.session_maker() as session, session.begin():
-        await session.delete(refund_request)
-
-        if refund_request.handler_url:
+    if refund_request.handler_url:
+        async with db.postgres.session_maker() as session, session.begin():
             await session.execute(
                 insert(tables.HandlerNotificationRequest)
                 .values({
                     tables.HandlerNotificationRequest.id: uuid4(),
+                    tables.HandlerNotificationRequest.created_at: datetime.now(),
                     tables.HandlerNotificationRequest.handler_url: refund_request.handler_url,
                     tables.HandlerNotificationRequest.data: data
                 })
                 .on_conflict_do_nothing()
             )
+
+    return True

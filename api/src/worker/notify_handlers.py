@@ -1,7 +1,8 @@
 import asyncio
 import httpx
 import logging
-from sqlalchemy import select
+from datetime import datetime
+from sqlalchemy import select, update, nulls_last
 
 import tables
 import db.postgres
@@ -15,20 +16,35 @@ async def handlers_notification_loop(
     handler_client: httpx.AsyncClient
 ):
     while True:
-        await asyncio.sleep(settings.handlers_notification_loop_sleep_duration)
-
         async with db.postgres.session_maker() as session:
-            for notification_request in (await session.execute(
+            request = await session.scalar(
                 select(tables.HandlerNotificationRequest)
-            )).scalars():
-                session.expunge_all()
-                await notify_handler(notification_request, handler_client)
+                .order_by(nulls_last(tables.HandlerNotificationRequest.processed_at.asc()))
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+
+            if request:
+                session.expunge(request)
+                if await notify_handler(request, handler_client):
+                    await session.delete(request)
+                else:
+                    await session.execute(
+                        update(tables.HandlerNotificationRequest.processed_at)
+                        .where(tables.HandlerNotificationRequest.id == request.id)
+                        .values({tables.HandlerNotificationRequest.processed_at: datetime.now()})
+                    )
+
+                await session.commit()
+                continue
+
+        await asyncio.sleep(settings.handlers_notification_loop_sleep_duration)
 
 
 async def notify_handler(
     notify_request: tables.HandlerNotificationRequest,
     handler_client: httpx.AsyncClient
-):
+) -> bool:
     error_msg = None
     try:
         response = await handler_client.post(
@@ -43,7 +59,6 @@ async def notify_handler(
 
     if error_msg is not None:
         logger.warning(error_msg)
-        return
+        return False
 
-    async with db.postgres.session_maker() as session, session.begin():
-        await session.delete(notify_request)
+    return True

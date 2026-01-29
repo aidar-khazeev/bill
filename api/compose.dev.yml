@@ -35,3 +35,37 @@ services:
     depends_on:
       bill-api:
         condition: service_started
+
+  bill-api-worker-1:
+    build: .
+    command: .venv/bin/python -m worker
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BILL_POSTGRES_HOST: bill-postgres
+      BILL_POSTGRES_PORT: 5432
+      BILL_KAFKA_BOOTSTRAP_SERVERS: bill-kafka-0:9092
+      BILL_POSTGRES_USER: ${BILL_POSTGRES_USER:?}
+      BILL_POSTGRES_PASSWORD: ${BILL_POSTGRES_PASSWORD:?}
+      BILL_POSTGRES_DB: ${BILL_POSTGRES_DB:?}
+    depends_on:
+      bill-api:
+        condition: service_started
+
+  bill-api-worker-2:
+    build: .
+    command: .venv/bin/python -m worker
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BILL_POSTGRES_HOST: bill-postgres
+      BILL_POSTGRES_PORT: 5432
+      BILL_KAFKA_BOOTSTRAP_SERVERS: bill-kafka-0:9092
+      BILL_POSTGRES_USER: ${BILL_POSTGRES_USER:?}
+      BILL_POSTGRES_PASSWORD: ${BILL_POSTGRES_PASSWORD:?}
+      BILL_POSTGRES_DB: ${BILL_POSTGRES_DB:?}
+    depends_on:
+      bill-api:
+        condition: service_started
