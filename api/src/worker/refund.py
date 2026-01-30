@@ -4,8 +4,8 @@ import asyncio
 import json
 import aiokafka
 from uuid import uuid4
-from datetime import datetime
-from sqlalchemy import select, update, nulls_last
+from datetime import datetime, timedelta
+from sqlalchemy import select, update, nulls_last, or_
 from sqlalchemy.dialects.postgresql import insert
 
 import tables
@@ -21,6 +21,10 @@ async def refund_loop(yookassa_client: httpx.AsyncClient, kafka_producer: aiokaf
         async with db.postgres.session_maker() as session:
             request = await session.scalar(
                 select(tables.RefundRequest)
+                .where(or_(
+                    tables.RefundRequest.processed_at.is_(None),
+                    tables.RefundRequest.processed_at < (datetime.now() - timedelta(seconds=settings.refund_loop_sleep_duration))
+                ))
                 .order_by(nulls_last(tables.RefundRequest.processed_at.asc()))
                 .with_for_update(skip_locked=True)
                 .limit(1)

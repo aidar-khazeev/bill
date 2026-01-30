@@ -4,8 +4,8 @@ import asyncio
 import aiokafka
 import json
 from uuid import uuid4
-from datetime import datetime
-from sqlalchemy import select, update, nulls_last
+from datetime import datetime, timedelta
+from sqlalchemy import select, update, nulls_last, or_
 from sqlalchemy.dialects.postgresql import insert
 
 import tables
@@ -25,6 +25,10 @@ async def payments_polling_loop(
         async with db.postgres.session_maker() as session:
             request = await session.scalar(
                 select(tables.PaymentRequest)
+                .where(or_(
+                    tables.PaymentRequest.processed_at.is_(None),
+                     tables.PaymentRequest.processed_at < (datetime.now() - timedelta(seconds=settings.payments_polling_loop_sleep_duration))
+                ))
                 .order_by(nulls_last(tables.PaymentRequest.processed_at.asc()))
                 .with_for_update(skip_locked=True)
                 .limit(1)
@@ -98,6 +102,7 @@ async def update_payment_status(
         'extra_data': payment_request.extra_data
     }
 
+    # TODO Использовать Transactional Producer? https://aiokafka.readthedocs.io/en/stable/producer.html#transactional-producer
     await kafka_producer.send_and_wait(
         topic='payment',
         value=json.dumps(data).encode()

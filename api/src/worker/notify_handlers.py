@@ -1,8 +1,8 @@
 import asyncio
 import httpx
 import logging
-from datetime import datetime
-from sqlalchemy import select, update, nulls_last
+from datetime import datetime, timedelta
+from sqlalchemy import select, update, nulls_last, or_
 
 import tables
 import db.postgres
@@ -19,6 +19,10 @@ async def handlers_notification_loop(
         async with db.postgres.session_maker() as session:
             request = await session.scalar(
                 select(tables.HandlerNotificationRequest)
+                .where(or_(
+                    tables.HandlerNotificationRequest.processed_at.is_(None),
+                    tables.HandlerNotificationRequest.processed_at < (datetime.now() - timedelta(seconds=settings.handlers_notification_loop_sleep_duration))
+                ))
                 .order_by(nulls_last(tables.HandlerNotificationRequest.processed_at.asc()))
                 .with_for_update(skip_locked=True)
                 .limit(1)
