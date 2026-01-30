@@ -6,8 +6,8 @@ import httpx
 import aiokafka
 from asgi_lifespan import LifespanManager
 
-sys.path.append(str(pathlib.Path(__file__).parent.parent/'src'))
-sys.path.append(str(pathlib.Path(__file__).parent))
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent/'src'))
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
 from settings import pg_settings, kafka_settings
 from main import app

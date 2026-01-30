@@ -4,8 +4,8 @@ import pathlib
 import httpx
 from uuid import uuid4
 
-sys.path.append(str(pathlib.Path(__file__).parent.parent/'src'))
-sys.path.append(str(pathlib.Path(__file__).parent))
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent/'src'))
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
 
 @pytest.fixture

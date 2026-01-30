@@ -18,4 +18,4 @@ COPY ./tests/ ./tests
 
 ENV PYTHONPATH=src:tests
 
-CMD [".venv/bin/pytest", "-p", "no:cacheprovider", "--verbose", "--exitfirst"]
+CMD [".venv/bin/pytest", "-p", "no:cacheprovider", "--verbose", "--exitfirst", "tests/api"]
