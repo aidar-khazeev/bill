@@ -19,7 +19,8 @@ class PaymentBody(BaseModel):
         'Обработчик должен принимать post запрос, и должен быть идемпотентным'
     )
     return_url: HttpUrl
-    extra_data: dict[str, Any] | None = None
+    extra_data: dict[str, Any] | None = Field(default=None)
+    card_data: dict[str, Any] | None = Field(default=None)
 
 
 @router.post(
@@ -33,13 +34,14 @@ async def create_payment(
     body: Annotated[PaymentBody, Body()],
     payments_service: Annotated[PaymentService, Depends(get_payment_service)]
 ) -> ChargeInfo:
-    return await payments_service.charge(
+    return await payments_service.payment(
         user_id=body.user_id,
         handler_url=str(body.handler_url) if body.handler_url else None,
         return_url=str(body.return_url),
         amount=body.amount,
         currency=body.currency,
-        extra_data=body.extra_data
+        extra_data=body.extra_data,
+        card_data=body.card_data
     )
 
 

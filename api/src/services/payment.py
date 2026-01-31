@@ -27,21 +27,22 @@ class ExternalPaymentServiceError(Exception):
 
 class ChargeInfo(BaseModel):
     payment_id: UUID
-    confirmation_url: HttpUrl
+    confirmation_url: HttpUrl | None
 
 
 @dataclass(frozen=True)
 class PaymentService:
     yookassa_client: httpx.AsyncClient
 
-    async def charge(
+    async def payment(
         self,
         user_id: UUID,
         handler_url: str | None,
         return_url: str,
         amount: Decimal,
         currency: str,
-        extra_data: dict[str, Any] | None
+        extra_data: dict[str, Any] | None,
+        card_data: dict[str, Any] | None
     ):
         payment_id = uuid4()
 
@@ -61,7 +62,14 @@ class PaymentService:
                     },
                     # https://yookassa.ru/developers/payment-acceptance/getting-started/payment-process#capture-and-cancel
                     'capture': True
-                }
+                } | (
+                    {
+                        'payment_method_data': {
+                            'type': 'bank_card',
+                            'card': card_data
+                        }
+                    } or {}
+                )
             )
         except httpx.ConnectError as e:
             logger.error(f'connection error: {str(e)}')
@@ -101,7 +109,10 @@ class PaymentService:
 
         return ChargeInfo(
             payment_id=payment_id,
-            confirmation_url=HttpUrl(response_json['confirmation']['confirmation_url'])
+            confirmation_url=(
+                HttpUrl(response_json['confirmation']['confirmation_url'])
+                if not card_data else None
+            )
         )
 
     async def refund(

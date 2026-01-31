@@ -23,7 +23,6 @@ async def payments_polling_loop(yookassa_client: httpx.AsyncClient, kafka_produc
 
     async def check_for_payment():
         async with limiter:
-            print("polling")
             async with db.postgres.session_maker() as session:
                 request = await session.scalar(
                     select(tables.PaymentRequest)

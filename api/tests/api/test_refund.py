@@ -5,7 +5,7 @@ import asyncio
 import json
 
 
-async def test_successful_payment(
+async def test_successful_refund(
     api_client: httpx.AsyncClient,
     kafka_consumer: aiokafka.AIOKafkaConsumer,
 ):
@@ -21,26 +21,45 @@ async def test_successful_payment(
             'expiry_month': '12',
             'cardholder': 'XXX',
             'csc': '543'
-        },
-        'extra_data': {
-            'payment_test': '💵'
         }
     })
 
     assert response.status_code == 200, response.text
     response_json = response.json()
+    payment_id = response_json['payment_id']
 
     async with asyncio.timeout(20.0):
         async for msg in kafka_consumer:
             assert msg.topic == 'payment'
             assert isinstance(msg.value, bytes), msg
-            value = json.loads(msg.value.decode())
+            break
 
+
+    response = await api_client.post(f'/api/v1/payment/{payment_id}/refund', json={
+        'user_id': str(uuid.uuid4()),
+        'amount': '100.00',
+        'currency': 'RUB',
+        'extra_data': {
+            'refund_test': '😎'
+        }
+    })
+    assert response.status_code == 200, response.text
+    response_json = response.json()
+
+    async with asyncio.timeout(20.0):
+        async for msg in kafka_consumer:
+            assert msg.topic == 'refund'
+            assert isinstance(msg.value, bytes), msg
+
+            value = json.loads(msg.value)
+            assert isinstance(value, dict)
+
+            value.pop('id')
             assert value == {
-                'id': response_json['payment_id'],
                 'status': 'succeeded',
+                'external_cancellation_reason': None,
                 'extra_data': {
-                    'payment_test': '💵'
+                    'refund_test': '😎'
                 }
             }, value
             break
