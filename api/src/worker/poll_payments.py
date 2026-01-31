@@ -3,6 +3,7 @@ import httpx
 import asyncio
 import aiokafka
 import json
+import anyio
 from uuid import uuid4
 from datetime import datetime, timedelta
 from sqlalchemy import select, update, nulls_last, or_
@@ -17,38 +18,44 @@ logger = logging.getLogger('bill-worker-payments-polling-loop')
 
 
 # У нас не используется веб-хук для оповещений от Yookassa, нет доменного имени
-async def payments_polling_loop(
-    yookassa_client: httpx.AsyncClient,
-    kafka_producer: aiokafka.AIOKafkaProducer
-):
-    while True:
-        async with db.postgres.session_maker() as session:
-            request = await session.scalar(
-                select(tables.PaymentRequest)
-                .where(or_(
-                    tables.PaymentRequest.processed_at.is_(None),
-                     tables.PaymentRequest.processed_at < (datetime.now() - timedelta(seconds=settings.payments_polling_loop_sleep_duration))
-                ))
-                .order_by(nulls_last(tables.PaymentRequest.processed_at.asc()))
-                .with_for_update(skip_locked=True)
-                .limit(1)
-            )
+async def payments_polling_loop(yookassa_client: httpx.AsyncClient, kafka_producer: aiokafka.AIOKafkaProducer):
+    limiter = anyio.CapacityLimiter(settings.payments_polling_loop_concurrency)
 
-            if request:
-                session.expunge(request)
-                if await update_payment_status(request, yookassa_client, kafka_producer):
-                    await session.delete(request)
-                else:
-                    await session.execute(
-                        update(tables.PaymentRequest)
-                        .where(tables.PaymentRequest.id == request.id)
-                        .values({tables.PaymentRequest.processed_at: datetime.now()})
-                    )
+    async def check_for_payment():
+        async with limiter:
+            print("polling")
+            async with db.postgres.session_maker() as session:
+                request = await session.scalar(
+                    select(tables.PaymentRequest)
+                    .where(or_(
+                        tables.PaymentRequest.processed_at.is_(None),
+                        tables.PaymentRequest.processed_at < (datetime.now() - timedelta(seconds=settings.payments_polling_loop_sleep_duration))
+                    ))
+                    .order_by(nulls_last(tables.PaymentRequest.processed_at.asc()))
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
+                )
 
-                await session.commit()
-                continue
+                if request:
+                    if await update_payment_status(request, yookassa_client, kafka_producer):
+                        await session.delete(request)
+                    else:
+                        await session.execute(
+                            update(tables.PaymentRequest)
+                            .where(tables.PaymentRequest.id == request.id)
+                            .values({tables.PaymentRequest.processed_at: datetime.now()})
+                        )
 
-        await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
+                    await session.commit()
+                    return
+
+            await asyncio.sleep(settings.payments_polling_loop_sleep_duration)
+
+    async with anyio.create_task_group() as tg:
+        while True:
+            async with limiter:
+                tg.start_soon(check_for_payment)
+            await asyncio.sleep(0)
 
 
 # Использовался бы и при получении уведомлений через веб-хук
@@ -79,9 +86,12 @@ async def update_payment_status(
     # Не должно происходить
     # 'pending' отлавливаем по стэку выше
     # 'waiting_for_capture' быть не может, так как не используем подтверждение оплаты
-    if status not in ('succeeded', 'cancelled'):
+    if status not in ('succeeded', 'canceled'):
         logger.warning(f'yookassa payment {yookassa_payment_data['id']} has unknown status "{status}", ignoring')
         return False
+
+    if status == 'canceled':  # Оба варианта верны. Yookassa использует `canceled`, мы - `cancelled`
+        status = 'cancelled'
 
     async with db.postgres.session_maker() as session, session.begin():
         cancellation_details = yookassa_payment_data.get('cancellation_details')

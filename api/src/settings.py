@@ -5,11 +5,15 @@ from pydantic import Field
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env.local', extra='allow', env_prefix='bill_api_')
 
-    notification_timeout: float = Field(default=5.0)
-
     refund_loop_sleep_duration: float = Field(default=3.0)
+    refund_loop_concurrency: int = Field(default=1)
+
     payments_polling_loop_sleep_duration: float = Field(default=3.0)
+    payments_polling_loop_concurrency: int = Field(default=1)
+
     handlers_notification_loop_sleep_duration: float = Field(default=3.0)
+    handlers_notification_loop_concurrency: int = Field(default=1)
+    handler_notification_timeout: float = Field(default=5.0)
 
 
 class PostgresSettings(BaseSettings):

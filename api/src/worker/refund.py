@@ -3,6 +3,7 @@ import httpx
 import asyncio
 import json
 import aiokafka
+import anyio
 from uuid import uuid4
 from datetime import datetime, timedelta
 from sqlalchemy import select, update, nulls_last, or_
@@ -17,34 +18,43 @@ logger = logging.getLogger('bill-worker-refund-loop')
 
 
 async def refund_loop(yookassa_client: httpx.AsyncClient, kafka_producer: aiokafka.AIOKafkaProducer):
-    while True:
-        async with db.postgres.session_maker() as session:
-            request = await session.scalar(
-                select(tables.RefundRequest)
-                .where(or_(
-                    tables.RefundRequest.processed_at.is_(None),
-                    tables.RefundRequest.processed_at < (datetime.now() - timedelta(seconds=settings.refund_loop_sleep_duration))
-                ))
-                .order_by(nulls_last(tables.RefundRequest.processed_at.asc()))
-                .with_for_update(skip_locked=True)
-                .limit(1)
-            )
+    limiter = anyio.CapacityLimiter(settings.refund_loop_concurrency)
 
-            if request:
-                session.expunge(request)
-                if await refund_payment(request, kafka_producer, yookassa_client):
-                    await session.delete(request)
-                else:
-                    await session.execute(
-                        update(tables.RefundRequest)
-                        .where(tables.RefundRequest.id == request.id)
-                        .values({tables.RefundRequest.processed_at: datetime.now()})
-                    )
+    async def check_for_refund():
+        async with limiter:
+            async with db.postgres.session_maker() as session:
+                request = await session.scalar(
+                    select(tables.RefundRequest)
+                    .where(or_(
+                        tables.RefundRequest.processed_at.is_(None),
+                        tables.RefundRequest.processed_at < (datetime.now() - timedelta(seconds=settings.refund_loop_sleep_duration))
+                    ))
+                    .order_by(nulls_last(tables.RefundRequest.processed_at.asc()))
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
+                )
 
-                await session.commit()
-                continue
+                if request:
+                    if await refund_payment(request, kafka_producer, yookassa_client):
+                        await session.delete(request)
+                    else:
+                        await session.execute(
+                            update(tables.RefundRequest)
+                            .where(tables.RefundRequest.id == request.id)
+                            .values({tables.RefundRequest.processed_at: datetime.now()})
+                        )
 
-        await asyncio.sleep(settings.refund_loop_sleep_duration)
+                    await session.commit()
+                    return
+
+            await asyncio.sleep(settings.refund_loop_sleep_duration)
+
+
+    async with anyio.create_task_group() as tg:
+        while True:
+            async with limiter:
+                tg.start_soon(check_for_refund)
+            await asyncio.sleep(0)
 
 
 async def refund_payment(
@@ -90,9 +100,12 @@ async def refund_payment(
 
     # https://yookassa.ru/developers/api#refund_object_status
     # Не должно быть других статусов, проверяем на всякий случай
-    if status not in ('succeeded', 'cancelled'):
+    if status not in ('succeeded', 'canceled'):
         logger.warning(f'yookassa refund {response_json['id']} has unknown status "{status}", ignoring')
         return False
+
+    if status == 'canceled':  # Оба варианта верны. Yookassa использует `canceled`, мы - `cancelled`
+        status = 'cancelled'
 
     async with db.postgres.session_maker() as session, session.begin():
         await session.execute(

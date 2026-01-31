@@ -1,7 +1,7 @@
-import asyncio
 import httpx
 import aiokafka
 import logging
+import anyio
 
 from .refund import refund_loop
 from .poll_payments import payments_polling_loop
@@ -24,10 +24,10 @@ async def run():
     await kafka_producer.start()
 
     try:
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(refund_loop(yookassa_client, kafka_producer))
-            tg.create_task(payments_polling_loop(yookassa_client, kafka_producer))
-            tg.create_task(handlers_notification_loop(handler_client))
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(refund_loop, yookassa_client, kafka_producer)
+            tg.start_soon(payments_polling_loop, yookassa_client, kafka_producer)
+            tg.start_soon(handlers_notification_loop, handler_client)
 
             logger.info('worker is started')
     finally:
