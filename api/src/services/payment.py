@@ -67,7 +67,7 @@ class PaymentService:
                             'type': 'bank_card',
                             'card': card_data
                         }
-                    } or {}
+                    } if card_data else {}
                 )
             )
         except httpx.ConnectError as e:
