@@ -37,7 +37,6 @@ class PaymentService:
     async def payment(
         self,
         user_id: UUID,
-        handler_url: str | None,
         return_url: str,
         amount: Decimal,
         currency: str,
@@ -103,7 +102,6 @@ class PaymentService:
                 tables.PaymentRequest.id: uuid4(),
                 tables.PaymentRequest.created_at: now,
                 tables.PaymentRequest.payment_id: payment_id,
-                tables.PaymentRequest.handler_url: handler_url,
                 tables.PaymentRequest.extra_data: extra_data
             }))
 
@@ -118,7 +116,6 @@ class PaymentService:
     async def refund(
         self,
         payment_id: UUID,
-        handler_url: str | None,
         amount: Decimal,
         currency: str,
         extra_data: dict[str, Any] | None
@@ -148,7 +145,6 @@ class PaymentService:
                 tables.RefundRequest.id: uuid4(),
                 tables.RefundRequest.created_at: now,
                 tables.RefundRequest.refund_id: refund_id,
-                tables.RefundRequest.handler_url: handler_url,
                 tables.RefundRequest.extra_data: extra_data
             }))
 

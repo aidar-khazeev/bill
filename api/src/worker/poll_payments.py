@@ -4,10 +4,8 @@ import asyncio
 import aiokafka
 import json
 import anyio
-from uuid import uuid4
 from datetime import datetime, timedelta
 from sqlalchemy import select, update, nulls_last, or_
-from sqlalchemy.dialects.postgresql import insert
 
 import tables
 import db.postgres
@@ -114,21 +112,9 @@ async def update_payment_status(
     # TODO Использовать Transactional Producer? https://aiokafka.readthedocs.io/en/stable/producer.html#transactional-producer
     await kafka_producer.send_and_wait(
         topic='payment',
+        key=payment.id.bytes,
         value=json.dumps(data).encode()
     )
     logger.info(f'sent notification about payment {payment.id} to the "payment" topic')
-
-    if payment_request.handler_url:
-        async with db.postgres.session_maker() as session, session.begin():
-            await session.execute(
-                insert(tables.HandlerNotificationRequest)
-                .values({
-                    tables.HandlerNotificationRequest.id: uuid4(),
-                    tables.HandlerNotificationRequest.created_at: datetime.now(),
-                    tables.HandlerNotificationRequest.handler_url: payment_request.handler_url,
-                    tables.HandlerNotificationRequest.data: data
-                })
-                .on_conflict_do_nothing()
-            )
 
     return True

@@ -4,10 +4,8 @@ import asyncio
 import json
 import aiokafka
 import anyio
-from uuid import uuid4
 from datetime import datetime, timedelta
 from sqlalchemy import select, update, nulls_last, or_
-from sqlalchemy.dialects.postgresql import insert
 
 import tables
 import db.postgres
@@ -127,21 +125,9 @@ async def refund_payment(
 
     await kafka_producer.send_and_wait(
         topic='refund',
+        key=refund.id.bytes,
         value=json.dumps(data).encode()
     )
     logger.info(f'sent notification about refund {refund.id} to the "refund" topic')
-
-    if refund_request.handler_url:
-        async with db.postgres.session_maker() as session, session.begin():
-            await session.execute(
-                insert(tables.HandlerNotificationRequest)
-                .values({
-                    tables.HandlerNotificationRequest.id: uuid4(),
-                    tables.HandlerNotificationRequest.created_at: datetime.now(),
-                    tables.HandlerNotificationRequest.handler_url: refund_request.handler_url,
-                    tables.HandlerNotificationRequest.data: data
-                })
-                .on_conflict_do_nothing()
-            )
 
     return True
