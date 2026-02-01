@@ -14,10 +14,6 @@ class PaymentBody(BaseModel):
     user_id: UUID
     amount: Decimal = Field(gt=0.0)
     currency: Literal['RUB'] = Field(default='RUB')
-    handler_url: HttpUrl | None = Field(default=None, description=
-        'Клиенту необходимо указать URL, по которому он будет уведомлен о совершении платежа<br>'
-        'Обработчик должен принимать post запрос, и должен быть идемпотентным'
-    )
     return_url: HttpUrl
     extra_data: dict[str, Any] | None = Field(default=None)
     card_data: dict[str, Any] | None = Field(default=None)

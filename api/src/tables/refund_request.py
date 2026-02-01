@@ -15,5 +15,4 @@ class RefundRequest(Base):
     created_at: Mapped[datetime] = mapped_column(index=True)
     processed_at: Mapped[datetime | None] = mapped_column(index=True, nullable=True)
     refund_id: Mapped[UUID] = mapped_column(ForeignKey(Refund.id, ondelete='RESTRICT'), unique=True)
-    handler_url: Mapped[str | None] = mapped_column(nullable=True)
     extra_data: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
