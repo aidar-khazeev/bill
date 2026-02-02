@@ -4,7 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, Path
 from pydantic import BaseModel, Field, HttpUrl
 
-from services.payment import PaymentService, ChargeInfo, get_payment_service
+from services.payment import PaymentService, ChargeInfo, PaymentInfo, get_payment_service
 
 
 router = APIRouter()
@@ -24,7 +24,6 @@ class PaymentBody(BaseModel):
     description=
     'Создает платеж (payment) посредством внешнего сервиса<br>'
     'Пользователю необходимо перейти по предоставленной ссылке на внешний сервис, и произвести платеж<br>'
-    'Если платеж не будет совершен (за некоторый промежуток времени), он будет автоматически отменен'
 )
 async def create_payment(
     body: Annotated[PaymentBody, Body()],
@@ -38,6 +37,16 @@ async def create_payment(
         extra_data=body.extra_data,
         card_data=body.card_data
     )
+
+
+@router.get(
+    path='/{payment_id}'
+)
+async def get_payment(
+    payment_id: Annotated[UUID, Path()],
+    payments_service: Annotated[PaymentService, Depends(get_payment_service)]
+) -> PaymentInfo:
+    return await payments_service.get_payment(payment_id)
 
 
 class RefundBody(BaseModel):

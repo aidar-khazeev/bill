@@ -12,8 +12,6 @@ services:
       bill-api:
         condition: service_started
 
-    restart: always
-
     labels:
       filebeat_enable: "true"
       service: "bill-nginx"

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from decimal import Decimal
 from dataclasses import dataclass
 from pydantic import BaseModel, HttpUrl
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 
 import db.postgres
 import tables
@@ -28,6 +28,17 @@ class ExternalPaymentServiceError(Exception):
 class ChargeInfo(BaseModel):
     payment_id: UUID
     confirmation_url: HttpUrl | None
+
+
+class PaymentInfo(BaseModel):
+    id: UUID
+    external_id: str
+    created_at: datetime
+    user_id: UUID
+    status: str
+    external_cancellation_reason: str | None
+    amount: Decimal
+    currency: str
 
 
 @dataclass(frozen=True)
@@ -112,6 +123,26 @@ class PaymentService:
                 if not card_data else None
             )
         )
+
+    async def get_payment(self, payment_id: UUID):
+        async with db.postgres.session_maker() as session:
+            payment = await session.scalar(
+                select(tables.Payment)
+                .where(tables.Payment.id == payment_id)
+            )
+            if payment is None:
+                raise PaymentDoesntExistError()
+
+            return PaymentInfo(
+                id=payment.id,
+                external_id=payment.external_id,
+                created_at=payment.created_at,
+                user_id=payment.user_id,
+                status=payment.status,
+                external_cancellation_reason=payment.external_cancellation_reason,
+                amount=payment.amount,
+                currency=payment.currency
+            )
 
     async def refund(
         self,
