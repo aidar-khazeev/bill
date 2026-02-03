@@ -83,11 +83,11 @@ async def update_payment_status(
     # Не должно происходить
     # 'pending' отлавливаем по стэку выше
     # 'waiting_for_capture' быть не может, так как не используем подтверждение оплаты
-    if status not in ('succeeded', 'canceled'):
+    if status not in ('succeeded', 'canceled', 'cancelled'):
         logger.warning(f'yookassa payment {yookassa_payment_data['id']} has unknown status "{status}", ignoring')
         return False
 
-    if status == 'canceled':  # Оба варианта верны. Yookassa использует `canceled`, мы - `cancelled`
+    if status == 'canceled':  # Оба варианта верны. Yookassa использует `canceled` и `cancelled`, мы - только `cancelled`
         status = 'cancelled'
 
     async with db.postgres.session_maker() as session, session.begin():

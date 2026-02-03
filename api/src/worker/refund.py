@@ -98,11 +98,11 @@ async def refund_payment(
 
     # https://yookassa.ru/developers/api#refund_object_status
     # Не должно быть других статусов, проверяем на всякий случай
-    if status not in ('succeeded', 'canceled'):
+    if status not in ('succeeded', 'canceled', 'cancelled'):
         logger.warning(f'yookassa refund {response_json['id']} has unknown status "{status}", ignoring')
         return False
 
-    if status == 'canceled':  # Оба варианта верны. Yookassa использует `canceled`, мы - `cancelled`
+    if status == 'canceled':  # Оба варианта верны. Yookassa использует `canceled` и `cancelled`, мы - только `cancelled`
         status = 'cancelled'
 
     async with db.postgres.session_maker() as session, session.begin():
